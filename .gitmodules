@@ -1,0 +1,16 @@
+[submodule "tests/acquire-video-runtime"]
+	path = tests/acquire-video-runtime
+	url = ../acquire-video-runtime.git
+	branch = main
+[submodule "tests/acquire-driver-common"]
+	path = tests/acquire-driver-common
+	url = ../acquire-driver-common.git
+	branch = main
+[submodule "tests/acquire-driver-zarr"]
+	path = tests/acquire-driver-zarr
+	url = ../acquire-driver-zarr.git
+	branch = main
+[submodule "src/acquire-core-libs"]
+	path = src/acquire-core-libs
+	url = ../acquire-core-libs.git
+	branch = main
