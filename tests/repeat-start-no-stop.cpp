@@ -54,7 +54,7 @@ main()
         AOK(acquire_get_configuration(runtime, &properties));
         DEV(device_manager_select(dm,
                                   DeviceKind_Camera,
-                                  SIZED("vieworks.*") - 1,
+                                  SIZED(".*BFLY.*") - 1,
                                   &properties.video[0].camera.identifier));
         DEV(device_manager_select(dm,
                                   DeviceKind_Storage,

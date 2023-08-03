@@ -52,7 +52,7 @@ main()
             AOK(acquire_get_configuration(runtime, &properties));
             DEV(device_manager_select(dm,
                                       DeviceKind_Camera,
-                                      "VIEWORKS.*",
+                                      ".*BFLY.*",
                                       10,
                                       &properties.video[0].camera.identifier));
             DEV(device_manager_select(dm,

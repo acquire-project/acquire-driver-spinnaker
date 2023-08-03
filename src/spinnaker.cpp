@@ -45,7 +45,7 @@ echo_(const std::string& val, int line)
 
 struct SpinnakerCamera final : private Camera
 {
-    explicit SpinnakerCamera(Spinnaker::CameraPtr& camera);
+    explicit SpinnakerCamera(Spinnaker::CameraPtr camera);
     ~SpinnakerCamera();
 
     void set(struct CameraProperties* properties);
@@ -58,7 +58,7 @@ struct SpinnakerCamera final : private Camera
     void get_frame(void* im, size_t* nbytes, struct ImageInfo* info);
 
   private:
-    mutable Spinnaker::CameraPtr pCam_;
+    Spinnaker::CameraPtr pCam_;
     struct CameraProperties last_known_settings_;
     struct CameraPropertyMetadata last_known_capabilities_;
     uint64_t frame_id_;
@@ -104,12 +104,15 @@ struct SpinnakerCamera final : private Camera
 
 struct SpinnakerDriver final : public Driver
 {
-    SpinnakerDriver();
+    SpinnakerDriver(Spinnaker::SystemPtr system);
 
     uint32_t device_count();
     void describe(DeviceIdentifier* identifier, uint64_t i);
     void open(uint64_t device_id, struct Device** out);
     static void close(struct Device* in);
+
+  private:
+    Spinnaker::SystemPtr system_;
 };
 
 template<typename K, typename V>
@@ -330,7 +333,7 @@ spinnakercam_shutdown_(struct Driver* self_)
     return Device_Err;
 }
 
-SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr & pCam)
+SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr pCam)
   : Camera{ .set = ::spinnakercam_set,
             .get = ::spinnakercam_get,
             .get_meta = ::spinnakercam_get_meta,
@@ -387,7 +390,11 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr & pCam)
 SpinnakerCamera::~SpinnakerCamera()
 {
     try {
-        stop();
+        // TODO: calling stop calls EndAcquisition which is not idempotent,
+        // so we need to protect the call somehow.
+        //stop();
+        const std::scoped_lock lock(lock_);
+        pCam_->DeInit();
     } catch (...) {
         ;
     }
@@ -552,6 +559,7 @@ SpinnakerCamera::get(struct CameraProperties* properties)
     };
     last_known_settings_ = *properties;
 }
+
 uint8_t
 SpinnakerCamera::maybe_set_binning(uint8_t target, uint8_t last_value)
 {
@@ -590,7 +598,6 @@ SpinnakerCamera::start()
 {
     const std::scoped_lock lock(lock_);
     frame_id_ = 0;
-    pCam_->Init();
 
     Spinnaker::GenApi::INodeMap& nodeMapTLDevice = pCam_->GetTLDeviceNodeMap();
     Spinnaker::GenApi::INodeMap& nodeMap = pCam_->GetNodeMap();
@@ -641,7 +648,7 @@ void
 SpinnakerCamera::stop()
 {
     const std::scoped_lock lock(lock_);
-    pCam_->DeInit();
+    pCam_->EndAcquisition();
 }
 
 void
@@ -738,14 +745,15 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 //      SPINNAKERDRIVER IMPLEMENTATION
 //
 
-SpinnakerDriver::SpinnakerDriver()
+SpinnakerDriver::SpinnakerDriver(Spinnaker::SystemPtr system)
   : Driver{
       .device_count = ::spinnakercam_device_count,
       .describe = ::spinnakercam_describe,
       .open = ::spinnakercam_open,
       .close = ::spinnakercam_close,
       .shutdown = ::spinnakercam_shutdown_,
-  }
+  },
+  system_(system)
 {
 }
 
@@ -755,10 +763,9 @@ SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
     // DeviceManager device_id expects a uint8
     EXPECT(i < (1 << 8), "Expected a uint8 device index. Got: %llu", i);
 
-    Spinnaker::SystemPtr system = Spinnaker::System::GetInstance();
-    Spinnaker::CameraList camList = system->GetCameras();
+    Spinnaker::CameraList camList = system_->GetCameras();
     Spinnaker::CameraPtr pCam = camList.GetByIndex(i);
-    Spinnaker::GenApi::INodeMap& nodeMap = pCam->GetTLDeviceNodeMap();
+    Spinnaker::GenApi::INodeMap & nodeMap = pCam->GetTLDeviceNodeMap();
 
     const Spinnaker::GenApi::CStringPtr vendor_name =
       nodeMap.GetNode("DeviceVendorName");
@@ -783,8 +790,7 @@ SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
 uint32_t
 SpinnakerDriver::device_count()
 {
-    Spinnaker::SystemPtr system = Spinnaker::System::GetInstance();
-    Spinnaker::CameraList camList = system->GetCameras();
+    Spinnaker::CameraList camList = system_->GetCameras();
     return camList.GetSize();
 }
 
@@ -795,10 +801,18 @@ SpinnakerDriver::open(uint64_t device_id, struct Device** out)
     EXPECT(device_id < (1ULL << 8 * sizeof(int)) - 1,
            "Expected an int32 device id. Got: %llu",
            device_id);
-    Spinnaker::SystemPtr system = Spinnaker::System::GetInstance();
-    Spinnaker::CameraList camList = system->GetCameras();
+    // Not passing through system to the camera causes an exception
+    // to be thrown when the system pointer goes out of scope at the
+    // end of this function.
+    // Would be good to understand this better.
+    // Maybe the driver should keep a reference to the system?
+    Spinnaker::CameraList camList = system_->GetCameras();
     Spinnaker::CameraPtr pCam = camList.GetByIndex(device_id);
-    *out = (Device*)new SpinnakerCamera(pCam);
+    CHECK(pCam->IsValid());
+    pCam->Init();
+    CHECK(pCam->IsInitialized());
+    const auto cam = new SpinnakerCamera(pCam);
+    *out = (Device*)cam;
 }
 
 void
@@ -807,6 +821,8 @@ SpinnakerDriver::close(struct Device* in)
     CHECK(in);
     auto camera = (SpinnakerCamera*)in;
     delete camera;
+    // TODO: maybe need this somewhere in each program.
+    //Spinnaker::System::ReleaseInstance();
 }
 
 } // end anonymous namespace
@@ -816,7 +832,8 @@ acquire_driver_init_v0(acquire_reporter_t reporter)
 {
     try {
         logger_set_reporter(reporter);
-        return new SpinnakerDriver;
+        Spinnaker::SystemPtr system = Spinnaker::System::GetInstance();
+        return new SpinnakerDriver(system);
     } catch (const std::exception& exc) {
         LOGE("Exception: %s\n", exc.what());
     } catch (...) {

@@ -58,12 +58,17 @@ main()
 
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Camera,
-                                    SIZED("VIEWORKS.*") - 1,
+                                    SIZED(".*BFLY.*") - 1,
                                     &props.video[0].camera.identifier));
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Storage,
                                     SIZED("Zarr") - 1,
                                     &props.video[0].storage.identifier));
+        //DEVOK(device_manager_select(dm,
+        //                          DeviceKind_Storage,
+        //                          "Trash",
+        //                          5,
+        //                          &props.video[0].storage.identifier));
 
         storage_properties_init(
           &props.video[0].storage.settings, 0, SIZED("out.zarr"), 0, 0, { 0 });
