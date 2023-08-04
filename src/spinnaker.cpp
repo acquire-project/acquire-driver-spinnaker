@@ -473,6 +473,8 @@ SpinnakerCamera::query_exposure_time_capabilities_(
 void
 SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
 {
+    // TODO: Spinnaker supports independent horiztonal and vertical binning.
+    // Assume horizontal is fine for now.
     meta->binning = {
         .writable = Spinnaker::GenApi::IsWritable(pCam_->BinningHorizontal),
         .low = (float)pCam_->BinningHorizontal.GetMin(),
@@ -561,6 +563,16 @@ SpinnakerCamera::get(struct CameraProperties* properties)
 uint8_t
 SpinnakerCamera::maybe_set_binning(uint8_t target, uint8_t last_value)
 {
+    if (target != last_value) {
+        target = clamp(target,
+                       last_known_capabilities_.binning.low,
+                       last_known_capabilities_.binning.high);
+        if (last_known_capabilities_.binning.writable) {
+            pCam_->BinningHorizontal.SetValue(target);
+            pCam_->BinningVertical.SetValue(target);
+        }
+        return target;
+    }
     return last_value;
 }
 
@@ -568,14 +580,48 @@ SampleType
 SpinnakerCamera::maybe_set_px_type(SampleType target, SampleType last_known)
 {
     CHECK(target < SampleTypeCount);
-    return last_known;
+    if (target == last_known) {
+        return last_known;
+    }
+    if (!px_type_inv_table_.contains(target)) {
+        // TODO: should this error?
+        return last_known;
+    }
+
+    // TODO: broken in one-video-stream test.
+    // Understand why and maybe go back to enum values and/or avoid maps.
+    //if (Spinnaker::GenApi::IsWritable(pCam_->PixelFormat)) {
+    //    const std::string format = px_type_inv_table_.at(target);
+    //    const Spinnaker::GenICam::gcstring gstring(format.c_str());
+    //    pCam_->PixelFormat = gstring;
+    //}
+    return target;
 }
+
 CameraProperties::camera_properties_offset_s
 SpinnakerCamera::maybe_set_offset(
   CameraProperties::camera_properties_offset_s target,
   CameraProperties::camera_properties_offset_s last)
 {
-    return last;
+    if (target.x != last.x) {
+        target.x = clamp(target.x,
+                         last_known_capabilities_.offset.x.low,
+                         last_known_capabilities_.offset.x.high);
+        if (last_known_capabilities_.offset.x.writable) {
+            pCam_->OffsetX = target.x;
+        }
+        last.x = target.x;
+    }
+    if (target.y != last.y) {
+        target.y = clamp(target.y,
+                         last_known_capabilities_.offset.y.low,
+                         last_known_capabilities_.offset.y.high);
+        if (last_known_capabilities_.offset.y.writable) {
+            pCam_->OffsetY = target.y;
+        }
+        last.y = target.y;
+    }
+    return last;    
 }
 
 CameraProperties::camera_properties_shape_s
@@ -583,6 +629,24 @@ SpinnakerCamera::maybe_set_shape(
   CameraProperties::camera_properties_shape_s target,
   CameraProperties::camera_properties_shape_s last)
 {
+    if (target.x != last.x) {
+        target.x = clamp(target.x,
+                         last_known_capabilities_.shape.x.low,
+                         last_known_capabilities_.shape.x.high);
+        if (last_known_capabilities_.shape.x.writable) {
+            pCam_->Width = target.x;
+        }
+        last.x = target.x;
+    }
+    if (target.y != last.y) {
+        target.y = clamp(target.y,
+                         last_known_capabilities_.shape.y.low,
+                         last_known_capabilities_.shape.y.high);
+        if (last_known_capabilities_.shape.y.writable) {
+            pCam_->Height = target.y;
+        }
+        last.y = target.y;
+    }
     return last;
 }
 
@@ -684,24 +748,19 @@ void
 SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 {
     // TODO: check if similar.
-    // Locking: This function is basically read-only when it comes to EGCamera
-    // state so it doesn't need a scoped lock.
+    // Locking: This function is effectively read-only when it comes to
+    // spinnaker's camera state, so it doesn't need a scoped lock?
 
     // TODO: Check if we should pass explicit timeout.
     Spinnaker::ImagePtr pResultImage = pCam_->GetNextImage();
 
+    // Adapted from the Spinnaker Acquisition example.
     if (pResultImage->IsIncomplete()) {
         // Retrieve and print the image status description
         LOGE("Image incomplete: %s\n",
              Spinnaker::Image::GetImageStatusDescription(
                pResultImage->GetImageStatus()));
     } else {
-        // Print image information; height and width recorded in pixels
-        //
-        // *** NOTES ***
-        // Images have quite a bit of available metadata including
-        // things such as CRC, image status, and offset values, to
-        // name a few.
         const size_t width = pResultImage->GetWidth();
         const size_t height = pResultImage->GetHeight();
 
@@ -797,11 +856,6 @@ SpinnakerDriver::open(uint64_t device_id, struct Device** out)
     EXPECT(device_id < (1ULL << 8 * sizeof(int)) - 1,
            "Expected an int32 device id. Got: %llu",
            device_id);
-    // Not passing through system to the camera causes an exception
-    // to be thrown when the system pointer goes out of scope at the
-    // end of this function.
-    // Would be good to understand this better.
-    // Maybe the driver should keep a reference to the system?
     Spinnaker::CameraList camList = system_->GetCameras();
     Spinnaker::CameraPtr pCam = camList.GetByIndex((unsigned int)device_id);
     CHECK(pCam->IsValid());
@@ -817,8 +871,9 @@ SpinnakerDriver::close(struct Device* in)
     CHECK(in);
     auto camera = (SpinnakerCamera*)in;
     delete camera;
-    // TODO: maybe need this somewhere in each program.
-    //Spinnaker::System::ReleaseInstance();
+    // TODO: should proably release the system instance here,
+    // but this is static and calling GetInstance multiple times
+    // does not behave as one would expect with a singleton.
 }
 
 } // end anonymous namespace
@@ -828,6 +883,9 @@ acquire_driver_init_v0(acquire_reporter_t reporter)
 {
     try {
         logger_set_reporter(reporter);
+        // Not passing through system to the camera causes an exception
+        // to be thrown when the system pointer goes out of scope at the
+        // end of this function. Would be good to understand this better.
         Spinnaker::SystemPtr system = Spinnaker::System::GetInstance();
         return new SpinnakerDriver(system);
     } catch (const std::exception& exc) {
