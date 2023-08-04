@@ -462,11 +462,10 @@ void
 SpinnakerCamera::query_exposure_time_capabilities_(
   CameraPropertyMetadata* meta) const
 {
-    // TODO
     meta->exposure_time_us = {
         .writable = false,
-        .low = 10.0,
-        .high = 100000.0,
+        .low = (float)pCam_->ExposureTime.GetMin(),
+        .high = (float)pCam_->ExposureTime.GetMax(),
         .type = PropertyType_FloatingPrecision,
     };
 }
@@ -474,11 +473,10 @@ SpinnakerCamera::query_exposure_time_capabilities_(
 void
 SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
 {
-    // TODO
     meta->binning = {
         .writable = false,
-        .low = 1.0,
-        .high = 4.0,
+        .low = (float)pCam_->BinningHorizontal.GetMin(),
+        .high = (float)pCam_->BinningHorizontal.GetMax(),
         .type = PropertyType_FixedPrecision,
     };
 }
@@ -486,18 +484,17 @@ void
 SpinnakerCamera::query_roi_offset_capabilities_(
   CameraPropertyMetadata* meta) const
 {
-    // TODO
     meta->offset = {
         .x = {
           .writable = false,
-          .low = 0.0,
-          .high = 0.0,
+          .low = (float)pCam_->OffsetX.GetMin(),
+          .high = (float)pCam_->OffsetX.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
         .y = {
           .writable = false,
-          .low = 0.0,
-          .high = 0.0,
+          .low = (float)pCam_->OffsetY.GetMin(),
+          .high = (float)pCam_->OffsetY.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
     };
@@ -506,18 +503,17 @@ void
 SpinnakerCamera::query_roi_shape_capabilities_(
   CameraPropertyMetadata* meta) const
 {
-    // TODO
     meta->shape = {
         .x = {
           .writable = false,
-          .low = (float)pCam_->Width.GetValue(),
-          .high = (float)pCam_->Width.GetValue(),
+          .low = (float)pCam_->Width.GetMin(),
+          .high = (float)pCam_->Width.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
         .y = {
           .writable = false,
-          .low = (float)pCam_->Height.GetValue(),
-          .high = (float)pCam_->Height.GetValue(),
+          .low = (float)pCam_->Height.GetMin(),
+          .high = (float)pCam_->Height.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
     };
@@ -656,10 +652,8 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
 {
     const std::scoped_lock lock(lock_);
 
-    const Spinnaker::Camera* cam = pCam_.get();
-
-    uint32_t w = cam->Width.GetValue();
-    uint32_t h = cam->Height.GetValue();
+    const uint32_t w = (int32_t)pCam_->Width.GetValue();
+    const uint32_t h = (int32_t)pCam_->Height.GetValue();
     *shape = {
         .dims = {
             .channels = 1,
@@ -673,7 +667,7 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
           .height = w,
           .planes = w*h,
         },
-        .type = at_or(px_type_table_, cam->PixelFormat.GetValue(), SampleType_Unknown),
+        .type = at_or(px_type_table_, pCam_->PixelFormat.GetValue(), SampleType_Unknown),
     };
 }
 void
@@ -764,7 +758,7 @@ SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
     EXPECT(i < (1 << 8), "Expected a uint8 device index. Got: %llu", i);
 
     Spinnaker::CameraList camList = system_->GetCameras();
-    Spinnaker::CameraPtr pCam = camList.GetByIndex(i);
+    Spinnaker::CameraPtr pCam = camList.GetByIndex((unsigned int)i);
     Spinnaker::GenApi::INodeMap & nodeMap = pCam->GetTLDeviceNodeMap();
 
     const Spinnaker::GenApi::CStringPtr vendor_name =
@@ -807,7 +801,7 @@ SpinnakerDriver::open(uint64_t device_id, struct Device** out)
     // Would be good to understand this better.
     // Maybe the driver should keep a reference to the system?
     Spinnaker::CameraList camList = system_->GetCameras();
-    Spinnaker::CameraPtr pCam = camList.GetByIndex(device_id);
+    Spinnaker::CameraPtr pCam = camList.GetByIndex((unsigned int)device_id);
     CHECK(pCam->IsValid());
     pCam->Init();
     CHECK(pCam->IsInitialized());
