@@ -65,9 +65,9 @@ struct SpinnakerCamera final : private Camera
     mutable std::mutex lock_;
 
     // Maps GenICam PixelFormat names to SampleType.
-    const std::unordered_map<Spinnaker::PixelFormatEnums, SampleType>
+    const std::unordered_map<std::string, SampleType>
       px_type_table_;
-    const std::unordered_map<SampleType, Spinnaker::PixelFormatEnums>
+    const std::unordered_map<SampleType, std::string>
       px_type_inv_table_;
 
     // Maps GenICam TriggerActivation names to TriggerEdge
@@ -346,18 +346,18 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr pCam)
   , pCam_(pCam)
   , last_known_settings_{}
   , px_type_table_ {
-        { Spinnaker::PixelFormatEnums::PixelFormat_Mono8, SampleType_u8 },
-        { Spinnaker::PixelFormatEnums::PixelFormat_Mono10, SampleType_u10 },
-        { Spinnaker::PixelFormatEnums::PixelFormat_Mono12, SampleType_u12 },
-        { Spinnaker::PixelFormatEnums::PixelFormat_Mono14, SampleType_u14 },
-        { Spinnaker::PixelFormatEnums::PixelFormat_Mono16, SampleType_u16 },
+        { "Mono8", SampleType_u8 },
+        { "Mono10", SampleType_u10 },
+        { "Mono12", SampleType_u12 },
+        { "Mono14", SampleType_u14 },
+        { "Mono16", SampleType_u16 },
     }
   , px_type_inv_table_ {
-      { SampleType_u8 , Spinnaker::PixelFormatEnums::PixelFormat_Mono8 },
-      { SampleType_u10, Spinnaker::PixelFormatEnums::PixelFormat_Mono10},
-      { SampleType_u12, Spinnaker::PixelFormatEnums::PixelFormat_Mono12},
-      { SampleType_u14, Spinnaker::PixelFormatEnums::PixelFormat_Mono14},
-      { SampleType_u16, Spinnaker::PixelFormatEnums::PixelFormat_Mono16},
+      { SampleType_u8 , "Mono8"},
+      { SampleType_u10, "Mono10"},
+      { SampleType_u12, "Mono12"},
+      { SampleType_u14, "Mono14"},
+      { SampleType_u16, "Mono16"},
   }
   ,trig_edge_table_{
       { "RisingEdge", TriggerEdge_Rising },
@@ -523,10 +523,12 @@ void
 SpinnakerCamera::query_pixel_type_capabilities_(
   CameraPropertyMetadata* meta) const
 {
-    // TODO
     meta->supported_pixel_types = 0;
-    for (const auto& entry : px_type_table_) {
-        meta->supported_pixel_types |= (1ULL << entry.first);
+    Spinnaker::GenApi::StringList_t pixel_formats;
+    pCam_->PixelFormat.GetSymbolics(pixel_formats);
+    for (const auto& format : pixel_formats) {
+        meta->supported_pixel_types |=
+          (1ULL << at_or(px_type_table_, std::string(format.c_str()), SampleType_Unknown));
     }
 }
 
@@ -543,7 +545,7 @@ SpinnakerCamera::get(struct CameraProperties* properties)
         .exposure_time_us = (float)pCam_->ExposureTime.GetValue(),
         .binning = (uint8_t)pCam_->BinningHorizontal.GetValue(),
         .pixel_type =
-          at_or(px_type_table_, pCam_->PixelFormat.GetValue(), SampleType_Unknown),
+          at_or(px_type_table_, std::string((*(pCam_->PixelFormat)).c_str()), SampleType_Unknown),
         .offset = {
           .x = (uint32_t)pCam_->OffsetX.GetValue(),
           .y = (uint32_t)pCam_->OffsetY.GetValue(),
@@ -667,7 +669,7 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
           .height = w,
           .planes = w*h,
         },
-        .type = at_or(px_type_table_, pCam_->PixelFormat.GetValue(), SampleType_Unknown),
+        .type = at_or(px_type_table_, std::string((*(pCam_->PixelFormat)).c_str()), SampleType_Unknown),
     };
 }
 void
@@ -725,7 +727,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                                .height = (int64_t)width,
                                .planes = (int64_t)(width * height),
                   },
-                  .type = at_or(px_type_table_, frame->GetPixelFormat(), SampleType_Unknown),
+                  .type = at_or(px_type_table_, std::string(frame->GetPixelFormatName().c_str()), SampleType_Unknown),
               },
               .hardware_timestamp = timestamp_ns,
               .hardware_frame_id = frame_id_++,
