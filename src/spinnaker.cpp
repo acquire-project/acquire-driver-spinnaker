@@ -463,7 +463,7 @@ SpinnakerCamera::query_exposure_time_capabilities_(
   CameraPropertyMetadata* meta) const
 {
     meta->exposure_time_us = {
-        .writable = false,
+        .writable = Spinnaker::GenApi::IsWritable(pCam_->ExposureTime),
         .low = (float)pCam_->ExposureTime.GetMin(),
         .high = (float)pCam_->ExposureTime.GetMax(),
         .type = PropertyType_FloatingPrecision,
@@ -474,7 +474,7 @@ void
 SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
 {
     meta->binning = {
-        .writable = false,
+        .writable = Spinnaker::GenApi::IsWritable(pCam_->BinningHorizontal),
         .low = (float)pCam_->BinningHorizontal.GetMin(),
         .high = (float)pCam_->BinningHorizontal.GetMax(),
         .type = PropertyType_FixedPrecision,
@@ -486,13 +486,13 @@ SpinnakerCamera::query_roi_offset_capabilities_(
 {
     meta->offset = {
         .x = {
-          .writable = false,
+          .writable = Spinnaker::GenApi::IsWritable(pCam_->OffsetX),
           .low = (float)pCam_->OffsetX.GetMin(),
           .high = (float)pCam_->OffsetX.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
         .y = {
-          .writable = false,
+          .writable = Spinnaker::GenApi::IsWritable(pCam_->OffsetY),
           .low = (float)pCam_->OffsetY.GetMin(),
           .high = (float)pCam_->OffsetY.GetMax(),
           .type = PropertyType_FixedPrecision,
@@ -505,13 +505,13 @@ SpinnakerCamera::query_roi_shape_capabilities_(
 {
     meta->shape = {
         .x = {
-          .writable = false,
+          .writable = Spinnaker::GenApi::IsWritable(pCam_->Width),
           .low = (float)pCam_->Width.GetMin(),
           .high = (float)pCam_->Width.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
         .y = {
-          .writable = false,
+          .writable = Spinnaker::GenApi::IsWritable(pCam_->Height),
           .low = (float)pCam_->Height.GetMin(),
           .high = (float)pCam_->Height.GetMax(),
           .type = PropertyType_FixedPrecision,
