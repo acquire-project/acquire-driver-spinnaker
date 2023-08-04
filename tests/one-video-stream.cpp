@@ -64,11 +64,6 @@ main()
                                     DeviceKind_Storage,
                                     SIZED("Zarr") - 1,
                                     &props.video[0].storage.identifier));
-        //DEVOK(device_manager_select(dm,
-        //                          DeviceKind_Storage,
-        //                          "Trash",
-        //                          5,
-        //                          &props.video[0].storage.identifier));
 
         storage_properties_init(
           &props.video[0].storage.settings, 0, SIZED("out.zarr"), 0, 0, { 0 });
@@ -86,6 +81,12 @@ main()
         };
         props.video[0].camera.settings.exposure_time_us = 1e4;
         props.video[0].max_frame_count = 10;
+
+        // TODO: need to explicitly set chunk/tile shape because otherwise
+        // they are zero and writing fails.
+        props.video[0].storage.settings.chunking.tile.width = 256;
+        props.video[0].storage.settings.chunking.tile.height = 256;
+        props.video[0].storage.settings.chunking.tile.planes = 1;
 
         OK(acquire_configure(runtime, &props));
 
