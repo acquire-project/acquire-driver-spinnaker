@@ -379,6 +379,10 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr pCam)
   }
   , frame_id_(0)
 {
+    // Assumes an initialized camera. Maybe it should be uninitialized instead,
+    // so we can initialize here.
+    CHECK(pCam->IsValid());
+    CHECK(pCam->IsInitialized());
     // TODO: may need equivalent
     // grabber_.stop(); // just in case
     // grabber_.execute<ES::RemoteModule>("AcquisitionStop");
@@ -720,6 +724,8 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
 
     const uint32_t w = (int32_t)pCam_->Width.GetValue();
     const uint32_t h = (int32_t)pCam_->Height.GetValue();
+    // TODO: if possible, get the stride/rowbytes of the image we
+    // will get so that we can populate the stride properly
     *shape = {
         .dims = {
             .channels = 1,
@@ -739,9 +745,9 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
 void
 SpinnakerCamera::execute_trigger() const
 {
+    // TODO: check if the lock is really needed.
     const std::scoped_lock lock(lock_);
-    // TODO
-    // grabber_.execute<ES::RemoteModule>("TriggerSoftware");
+    pCam_->TriggerSoftware();
 }
 
 void
@@ -862,9 +868,7 @@ SpinnakerDriver::open(uint64_t device_id, struct Device** out)
            device_id);
     Spinnaker::CameraList camList = system_->GetCameras();
     Spinnaker::CameraPtr pCam = camList.GetByIndex((unsigned int)device_id);
-    CHECK(pCam->IsValid());
     pCam->Init();
-    CHECK(pCam->IsInitialized());
     const auto cam = new SpinnakerCamera(pCam);
     *out = (Device*)cam;
 }
