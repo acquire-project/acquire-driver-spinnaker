@@ -706,7 +706,8 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
     const uint32_t w = (int32_t)pCam_->Width.GetValue();
     const uint32_t h = (int32_t)pCam_->Height.GetValue();
     // TODO: if possible, get the stride/rowbytes of the image we
-    // will get so that we can populate the stride properly
+    // will get so that we can populate the stride properly and
+    // avoid a strided copy in get_frame.
     *shape = {
         .dims = {
             .channels = 1,
@@ -754,18 +755,31 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
         LOG("Grabbed width = %d, height = %d", width, height);
 
         const Spinnaker::IImage* frame = pResultImage.get();
+        EXPECT(frame->GetData(), "Expected non-null pointer");
 
         // TODO: check resolution of this timestamp
         const auto timestamp_ns = frame->GetTimeStamp();
 
-        // TODO: the buffer size can be larger than nbytes.
-        // Maybe spinnaker has a minimum allocation that differs from the
-        // compact pixel bytes?
-        // Maybe the bytes are misaligned for some shape/format combos?
-        //CHECK(*nbytes >= frame->GetBufferSize());
-        EXPECT(frame->GetData(), "Expected non-null pointer");
+        // Frame data may not be compact (i.e. 0 stride) and I am unsure if
+        // it is possible to set it to be compact.
+        const size_t stride = frame->GetStride();
+        CHECK((*nbytes % height) == 0);
+        const size_t row_size = *nbytes / height;
+        if (stride == row_size) {
+            // If it is compact, then copy all at once for performance.
+            std::memcpy(im, frame->GetData(), frame->GetBufferSize());
+        } else {
+            // Otherwise, do a strided copy.
+            CHECK(frame->GetBufferSize() > *nbytes);
+            uint8_t * im_data = (uint8_t *)im;
+            uint8_t * frame_data = (uint8_t *)frame->GetData();
+            for (int row = 0; row < height; ++row) {
+                std::memcpy(im, frame_data, row_size);
+                im_data += row_size;
+                frame_data += stride;
+            }
+        }
 
-        std::memcpy(im, frame->GetData(), frame->GetBufferSize());
         *info = {
             .shape = {
                   .dims = { .channels = 1,
