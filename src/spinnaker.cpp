@@ -379,10 +379,9 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr pCam)
   }
   , frame_id_(0)
 {
-    // Assumes an initialized camera. Maybe it should be uninitialized instead,
-    // so we can initialize here.
     CHECK(pCam->IsValid());
-    CHECK(pCam->IsInitialized());
+    CHECK(!pCam->IsInitialized());
+    pCam->Init();
     // TODO: may need equivalent
     // grabber_.stop(); // just in case
     // grabber_.execute<ES::RemoteModule>("AcquisitionStop");
@@ -477,7 +476,7 @@ SpinnakerCamera::query_exposure_time_capabilities_(
 void
 SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
 {
-    // TODO: Spinnaker supports independent horiztonal and vertical binning.
+    // TODO: Spinnaker supports independent horizontal and vertical binning.
     // Assume horizontal is fine for now.
     meta->binning = {
         .writable = Spinnaker::GenApi::IsWritable(pCam_->BinningHorizontal),
@@ -665,6 +664,8 @@ SpinnakerCamera::start()
     const std::scoped_lock lock(lock_);
     frame_id_ = 0;
 
+    // TODO: should we configure continuous acquisition outside of start?
+    // How does singleshot/snapshot acquisition work?
     Spinnaker::GenApi::INodeMap& nodeMapTLDevice = pCam_->GetTLDeviceNodeMap();
     Spinnaker::GenApi::INodeMap& nodeMap = pCam_->GetNodeMap();
 
@@ -676,7 +677,6 @@ SpinnakerCamera::start()
         return;
     }
 
-    // Retrieve entry node from enumeration node
     Spinnaker::GenApi::CEnumEntryPtr ptrAcquisitionModeContinuous =
       ptrAcquisitionMode->GetEntryByName("Continuous");
     if (!IsReadable(ptrAcquisitionModeContinuous)) {
@@ -685,29 +685,10 @@ SpinnakerCamera::start()
         return;
     }
 
-    // Retrieve integer value from entry node
-    const int64_t acquisitionModeContinuous =
-      ptrAcquisitionModeContinuous->GetValue();
-
-    // Set integer value from entry node as new value of enumeration node
+    const int64_t acquisitionModeContinuous = ptrAcquisitionModeContinuous->GetValue();
     ptrAcquisitionMode->SetIntValue(acquisitionModeContinuous);
 
-    LOG("Acquisition mode set to continuous...\n");
-
-    // Begin acquiring images
-    //
-    // *** NOTES ***
-    // What happens when the camera begins acquiring images depends on the
-    // acquisition mode. Single frame captures only a single image, multi
-    // frame captures a set number of images, and continuous captures a
-    // continuous stream of images. Because the example calls for the
-    // retrieval of 10 images, continuous mode has been set.
-    //
-    // *** LATER ***
-    // Image acquisition must be ended when no more images are needed.
     pCam_->BeginAcquisition();
-
-    LOG("Acquiring images...\n");
 }
 
 void
@@ -868,7 +849,6 @@ SpinnakerDriver::open(uint64_t device_id, struct Device** out)
            device_id);
     Spinnaker::CameraList camList = system_->GetCameras();
     Spinnaker::CameraPtr pCam = camList.GetByIndex((unsigned int)device_id);
-    pCam->Init();
     const auto cam = new SpinnakerCamera(pCam);
     *out = (Device*)cam;
 }
