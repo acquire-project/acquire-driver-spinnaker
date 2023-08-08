@@ -31,17 +31,7 @@ constexpr size_t NBUFFERS = 16;
     } while (0)
 #define CHECK(e) EXPECT(e, "Expression evaluated as false:\n\t%s", #e)
 
-// #define echo(str) echo_(str, __LINE__)
-#define echo(str) str
-
 namespace {
-
-std::string
-echo_(const std::string& val, int line)
-{
-    LOG("ECHO STRING %s (line %d)", val.c_str(), line);
-    return val;
-}
 
 struct SpinnakerCamera final : private Camera
 {
@@ -143,56 +133,6 @@ sample_type_bytes(const SampleType sample_type) {
     };
     // TODO: error instead.
     return 0;
-}
-
-Spinnaker::PixelFormatEnums
-sample_type_to_pixel_format(const SampleType sample_type) {
-    switch (sample_type) {
-        case SampleType_u8:
-            return Spinnaker::PixelFormatEnums::PixelFormat_Mono8;
-        case SampleType_u10:
-            return Spinnaker::PixelFormatEnums::PixelFormat_Mono10;
-        case SampleType_u12:
-            return Spinnaker::PixelFormatEnums::PixelFormat_Mono12;
-        case SampleType_u14:
-            return Spinnaker::PixelFormatEnums::PixelFormat_Mono14;
-        case SampleType_u16:
-            return Spinnaker::PixelFormatEnums::PixelFormat_Mono16;
-    }
-    return Spinnaker::PixelFormatEnums::UNKNOWN_PIXELFORMAT;
-}
-
-SampleType
-pixel_format_to_sample_type(const Spinnaker::PixelFormatEnums pixel_format) {
-    switch (pixel_format) {
-        case Spinnaker::PixelFormatEnums::PixelFormat_Mono8:
-            return SampleType_u8;
-        case Spinnaker::PixelFormatEnums::PixelFormat_Mono10:
-            return SampleType_u10;
-        case Spinnaker::PixelFormatEnums::PixelFormat_Mono12:
-            return SampleType_u12;
-        case Spinnaker::PixelFormatEnums::PixelFormat_Mono14:
-            return SampleType_u14;
-        case Spinnaker::PixelFormatEnums::PixelFormat_Mono16:
-            return SampleType_u16;
-    }
-    return SampleType::SampleType_Unknown;
-}
-
-SampleType
-pixel_format_str_to_sample_type(const Spinnaker::GenICam::gcstring & pixel_format) {
-    if (pixel_format == "Mono8") {
-        return SampleType_u8;
-    } else if (pixel_format == "Mono10") {
-        return SampleType_u10;
-    } else if (pixel_format == "Mono12") {
-        return SampleType_u12;
-    } else if (pixel_format == "Mono14") {
-        return SampleType_u14;
-    } else if (pixel_format == "Mono16") {
-        return SampleType_u16;
-    } 
-    return SampleType::SampleType_Unknown;
 }
 
 std::string
@@ -499,8 +439,8 @@ SpinnakerCamera::set(struct CameraProperties* properties)
 
     maybe_set_trigger(properties->input_triggers.frame_start,
                       last_known_settings_.input_triggers.frame_start);
-
-    // TODO
+    // TODO: do we need an equivalent?
+    // I cannot find one in the Spinnaker Camera API.
     // grabber_.reallocBuffers(NBUFFERS);
 }
 
@@ -605,7 +545,7 @@ SpinnakerCamera::query_pixel_type_capabilities_(
     meta->supported_pixel_types = 0;
     Spinnaker::GenApi::StringList_t pixel_formats;
     camera_->PixelFormat.GetSymbolics(pixel_formats);
-    for (const auto& format : pixel_formats) {
+    for (const Spinnaker::GenICam::gcstring & format : pixel_formats) {
         meta->supported_pixel_types |=
           (1ULL << at_or(px_type_table_, std::string(format.c_str()), SampleType_Unknown));
     }
