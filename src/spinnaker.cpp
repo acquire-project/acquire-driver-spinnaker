@@ -122,9 +122,64 @@ at_or(const std::unordered_map<K, V>& table, const K& key, V dflt)
     const auto it = table.find(key);
     if (it == std::end(table)) {
         return dflt;
-    } else {
-        return it->second;
     }
+    return it->second;
+}
+
+Spinnaker::PixelFormatEnums
+sample_type_to_pixel_format(const SampleType sample_type) {
+    switch (sample_type) {
+        case SampleType_u8:
+            return Spinnaker::PixelFormatEnums::PixelFormat_Mono8;
+        case SampleType_u10:
+            return Spinnaker::PixelFormatEnums::PixelFormat_Mono10;
+        case SampleType_u12:
+            return Spinnaker::PixelFormatEnums::PixelFormat_Mono12;
+        case SampleType_u14:
+            return Spinnaker::PixelFormatEnums::PixelFormat_Mono14;
+        case SampleType_u16:
+            return Spinnaker::PixelFormatEnums::PixelFormat_Mono16;
+    }
+    return Spinnaker::PixelFormatEnums::UNKNOWN_PIXELFORMAT;
+}
+
+SampleType
+pixel_format_to_sample_type(const Spinnaker::PixelFormatEnums pixel_format) {
+    switch (pixel_format) {
+        case Spinnaker::PixelFormatEnums::PixelFormat_Mono8:
+            return SampleType_u8;
+        case Spinnaker::PixelFormatEnums::PixelFormat_Mono10:
+            return SampleType_u10;
+        case Spinnaker::PixelFormatEnums::PixelFormat_Mono12:
+            return SampleType_u12;
+        case Spinnaker::PixelFormatEnums::PixelFormat_Mono14:
+            return SampleType_u14;
+        case Spinnaker::PixelFormatEnums::PixelFormat_Mono16:
+            return SampleType_u16;
+    }
+    return SampleType::SampleType_Unknown;
+}
+
+SampleType
+pixel_format_str_to_sample_type(const Spinnaker::GenICam::gcstring & pixel_format) {
+    if (pixel_format == "Mono8") {
+        return SampleType_u8;
+    } else if (pixel_format == "Mono10") {
+        return SampleType_u10;
+    } else if (pixel_format == "Mono12") {
+        return SampleType_u12;
+    } else if (pixel_format == "Mono14") {
+        return SampleType_u14;
+    } else if (pixel_format == "Mono16") {
+        return SampleType_u16;
+    } 
+    return SampleType::SampleType_Unknown;
+}
+
+std::string
+pixel_format_string(const Spinnaker::CameraPtr & camera) {
+    const Spinnaker::GenICam::gcstring name = *(camera->PixelFormat);
+    return std::string(name.c_str());
 }
 
 enum DeviceStatusCode
@@ -477,7 +532,7 @@ void
 SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
 {
     // TODO: Spinnaker supports independent horizontal and vertical binning.
-    // Assume horizontal is fine for now.
+    // Assume horizontal is representative for now.
     meta->binning = {
         .writable = Spinnaker::GenApi::IsWritable(pCam_->BinningHorizontal),
         .low = (float)pCam_->BinningHorizontal.GetMin(),
@@ -549,8 +604,7 @@ SpinnakerCamera::get(struct CameraProperties* properties)
     *properties = {
         .exposure_time_us = (float)pCam_->ExposureTime.GetValue(),
         .binning = (uint8_t)pCam_->BinningHorizontal.GetValue(),
-        .pixel_type =
-          at_or(px_type_table_, std::string((*(pCam_->PixelFormat)).c_str()), SampleType_Unknown),
+        .pixel_type = at_or(px_type_table_, pixel_format_string(pCam_), SampleType_Unknown),
         .offset = {
           .x = (uint32_t)pCam_->OffsetX.GetValue(),
           .y = (uint32_t)pCam_->OffsetY.GetValue(),
@@ -586,18 +640,21 @@ SpinnakerCamera::maybe_set_px_type(SampleType target, SampleType last_known)
     if (target == last_known) {
         return last_known;
     }
-    if (!px_type_inv_table_.contains(target)) {
+    const std::string format_name = at_or(px_type_inv_table_, target, std::string());
+    if (format_name.empty()) {
         // TODO: should this error?
+        LOGE("Sample type %d is unrecognized.", target);
         return last_known;
     }
-
-    // TODO: broken in one-video-stream test.
-    // Understand why and maybe go back to enum values and/or avoid maps.
-    //if (Spinnaker::GenApi::IsWritable(pCam_->PixelFormat)) {
-    //    const std::string format = px_type_inv_table_.at(target);
-    //    const Spinnaker::GenICam::gcstring gstring(format.c_str());
-    //    pCam_->PixelFormat = gstring;
-    //}
+    if (Spinnaker::GenApi::IsReadable(pCam_->PixelFormat) && Spinnaker::GenApi::IsWritable(pCam_->PixelFormat)) {
+        const auto entry = pCam_->PixelFormat.GetEntryByName(Spinnaker::GenICam::gcstring(format_name.c_str()));
+        if (Spinnaker::GenApi::IsReadable(entry)) {
+            pCam_->PixelFormat.SetIntValue(entry->GetValue());
+        } else {
+            LOGE("Sample type %d is recognized as spinnaker pixel format %s, but not supported by this camera.", target, format_name.c_str());
+            return last_known;
+        }   
+    }
     return target;
 }
 
@@ -721,7 +778,7 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
           .height = w,
           .planes = w*h,
         },
-        .type = at_or(px_type_table_, std::string((*(pCam_->PixelFormat)).c_str()), SampleType_Unknown),
+        .type = at_or(px_type_table_, pixel_format_string(pCam_), SampleType_Unknown),
     };
 }
 void
