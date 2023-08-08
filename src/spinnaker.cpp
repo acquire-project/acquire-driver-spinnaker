@@ -682,27 +682,16 @@ SpinnakerCamera::start()
 
     // TODO: should we configure continuous acquisition outside of start?
     // How does singleshot/snapshot acquisition work?
-    Spinnaker::GenApi::INodeMap& nodeMapTLDevice = camera_->GetTLDeviceNodeMap();
-    Spinnaker::GenApi::INodeMap& nodeMap = camera_->GetNodeMap();
 
-    Spinnaker::GenApi::CEnumerationPtr ptrAcquisitionMode =
-      nodeMap.GetNode("AcquisitionMode");
-    if (!IsReadable(ptrAcquisitionMode) || !IsWritable(ptrAcquisitionMode)) {
-        LOGE("Unable to set acquisition mode to continuous (enum retrieval). "
-             "Aborting...\n");
-        return;
+    if (!IsReadable(camera_->AcquisitionMode) || !IsWritable(camera_->AcquisitionMode)) {
+        throw std::runtime_error("Unable to get and set acquisition mode.");
     }
 
-    Spinnaker::GenApi::CEnumEntryPtr ptrAcquisitionModeContinuous =
-      ptrAcquisitionMode->GetEntryByName("Continuous");
-    if (!IsReadable(ptrAcquisitionModeContinuous)) {
-        LOGE("Unable to get or set acquisition mode to continuous (entry "
-             "retrieval). Aborting...\n");
-        return;
+    if (!IsReadable(camera_->AcquisitionMode.GetEntry((int64_t)Spinnaker::AcquisitionMode_Continuous))) {
+        throw std::runtime_error("Unable to get or set acquisition mode to continuous.");
     }
 
-    const int64_t acquisitionModeContinuous = ptrAcquisitionModeContinuous->GetValue();
-    ptrAcquisitionMode->SetIntValue(acquisitionModeContinuous);
+    camera_->AcquisitionMode.SetValue(Spinnaker::AcquisitionMode_Continuous);
 
     camera_->BeginAcquisition();
 }
