@@ -676,9 +676,10 @@ void
 SpinnakerCamera::stop()
 {
     const std::scoped_lock lock(lock_);
-    // Guard against consecutive calls to stop, which is at least needed
-    // to handle SpinnakerCamera's destructor.
+    // This guards against consecutive calls to stop, which occurs due
+    // to SpinnakerCamera's destructor and maybe in other cases too.
     if (camera_->IsStreaming()) {
+        // TODO: should this be AcquisitionAbort instead?
         camera_->EndAcquisition();
     }
 }
