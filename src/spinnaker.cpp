@@ -396,10 +396,6 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
     CHECK(camera->IsValid());
     CHECK(!camera->IsInitialized());
     camera->Init();
-    // TODO: may need equivalent
-    // grabber_.stop(); // just in case
-    // grabber_.execute<ES::RemoteModule>("AcquisitionStop");
-    // grabber_.setString<ES::RemoteModule>("TriggerMode", "Off");
     get(&last_known_settings_);
     get_meta(&last_known_capabilities_);
 }
@@ -407,9 +403,7 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
 SpinnakerCamera::~SpinnakerCamera()
 {
     try {
-        // TODO: calling stop calls EndAcquisition which is not idempotent,
-        // so we need to protect the call somehow.
-        //stop();
+        stop();
         const std::scoped_lock lock(lock_);
         camera_->DeInit();
     } catch (...) {
@@ -439,9 +433,6 @@ SpinnakerCamera::set(struct CameraProperties* properties)
 
     maybe_set_trigger(properties->input_triggers.frame_start,
                       last_known_settings_.input_triggers.frame_start);
-    // TODO: do we need an equivalent?
-    // I cannot find one in the Spinnaker Camera API.
-    // grabber_.reallocBuffers(NBUFFERS);
 }
 
 template<typename T>
@@ -685,7 +676,11 @@ void
 SpinnakerCamera::stop()
 {
     const std::scoped_lock lock(lock_);
-    camera_->EndAcquisition();
+    // Guard against consecutive calls to stop, which is at least needed
+    // to handle SpinnakerCamera's destructor.
+    if (camera_->IsStreaming()) {
+        camera_->EndAcquisition();
+    }
 }
 
 void
@@ -698,7 +693,7 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
     const uint32_t width = (int32_t)camera_->Width.GetValue();
     const uint32_t height = (int32_t)camera_->Height.GetValue();
     
-    // TODO: anything else we can if LinePitch is not readable?
+    // TODO: anything else we can do if LinePitch is not readable?
     int64_t row_stride = width;
     if (IsReadable(camera_->LinePitch)) {
         const int64_t row_bytes = camera_->LinePitch();
@@ -734,9 +729,9 @@ SpinnakerCamera::execute_trigger() const
 void
 SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 {
-    // TODO: check if similar.
-    // Locking: This function is effectively read-only when it comes to
-    // spinnaker's camera state, so it doesn't need a scoped lock?
+    // Prevent concurrent execution with stop, so that this does not leak
+    // memory associated with any retrieved frames.
+    const std::scoped_lock lock(lock_);
 
     // Adapted from the Acquisition.cpp example distributed with the Spinnaker SDK.
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
@@ -744,7 +739,6 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     if (frame->IsIncomplete()) {
         LOGE("Image incomplete: %s", Spinnaker::Image::GetImageStatusDescription(frame->GetImageStatus()));
     } else {
-
         const size_t width = frame->GetWidth();
         const size_t height = frame->GetHeight();
         const uint64_t timestamp_ns = frame->GetTimeStamp();
@@ -799,7 +793,6 @@ void
 SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
 {
     // TODO: shouldn't this check be done earlier?
-    // Spinnaker is not too fussy.
     // DeviceManager device_id expects a uint8
     EXPECT(i < (1 << 8), "Expected a uint8 device index. Got: %llu", i);
 
