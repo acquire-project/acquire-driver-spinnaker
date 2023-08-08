@@ -126,6 +126,25 @@ at_or(const std::unordered_map<K, V>& table, const K& key, V dflt)
     return it->second;
 }
 
+size_t
+sample_type_bytes(const SampleType sample_type) {
+    switch (sample_type) {
+        case SampleType_u8:
+        case SampleType_i8:
+            return 1;
+        case SampleType_u10:
+        case SampleType_u12:
+        case SampleType_u14:
+        case SampleType_u16:
+        case SampleType_i16:
+            return 2;
+        case SampleType_f32:
+            return 4;
+    };
+    // TODO: error instead.
+    return 0;
+}
+
 Spinnaker::PixelFormatEnums
 sample_type_to_pixel_format(const SampleType sample_type) {
     switch (sample_type) {
@@ -760,27 +779,36 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
 {
     const std::scoped_lock lock(lock_);
 
-    const uint32_t w = (int32_t)pCam_->Width.GetValue();
-    const uint32_t h = (int32_t)pCam_->Height.GetValue();
-    // TODO: if possible, get the stride/rowbytes of the image we
-    // will get so that we can populate the stride properly and
-    // avoid a strided copy in get_frame.
+    const SampleType sample_type = at_or(px_type_table_, pixel_format_string(pCam_), SampleType_Unknown);
+
+    const uint32_t width = (int32_t)pCam_->Width.GetValue();
+    const uint32_t height = (int32_t)pCam_->Height.GetValue();
+    
+    // TODO: anything else we can if LinePitch is not readable?
+    int64_t row_stride = width;
+    if (Spinnaker::GenApi::IsReadable(pCam_->LinePitch)) {
+        const int64_t row_bytes = pCam_->LinePitch();
+        const size_t element_bytes = sample_type_bytes(sample_type);
+        row_stride = row_bytes / element_bytes;
+    }
+
     *shape = {
         .dims = {
             .channels = 1,
-            .width = w,
-            .height = h,
+            .width = width,
+            .height = height,
             .planes = 1,
         },
         .strides = {
           .channels = 1,
           .width = 1,
-          .height = w,
-          .planes = w*h,
+          .height = row_stride,
+          .planes = row_stride*height,
         },
-        .type = at_or(px_type_table_, pixel_format_string(pCam_), SampleType_Unknown),
+        .type = sample_type,
     };
 }
+
 void
 SpinnakerCamera::execute_trigger() const
 {
@@ -817,25 +845,12 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
         // TODO: check resolution of this timestamp
         const auto timestamp_ns = frame->GetTimeStamp();
 
-        // Frame data may not be compact (i.e. 0 stride) and I am unsure if
-        // it is possible to set it to be compact.
-        const size_t stride = frame->GetStride();
-        CHECK((*nbytes % height) == 0);
-        const size_t row_size = *nbytes / height;
-        if (stride == row_size) {
-            // If it is compact, then copy all at once for performance.
-            std::memcpy(im, frame->GetData(), frame->GetBufferSize());
-        } else {
-            // Otherwise, do a strided copy.
-            CHECK(frame->GetBufferSize() > *nbytes);
-            uint8_t * im_data = (uint8_t *)im;
-            uint8_t * frame_data = (uint8_t *)frame->GetData();
-            for (int row = 0; row < height; ++row) {
-                std::memcpy(im, frame_data, row_size);
-                im_data += row_size;
-                frame_data += stride;
-            }
-        }
+        const size_t row_bytes = frame->GetStride();
+        const SampleType sample_type = at_or(px_type_table_, std::string(frame->GetPixelFormatName().c_str()), SampleType_Unknown);
+        const size_t element_bytes = sample_type_bytes(sample_type);
+        const int64_t row_stride = (int64_t)(row_bytes / element_bytes);
+        CHECK(*nbytes <= frame->GetBufferSize());
+        std::memcpy(im, frame->GetData(), *nbytes);
 
         *info = {
             .shape = {
@@ -845,10 +860,10 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                             .planes = 1 },
                   .strides = { .channels = 1,
                                .width = 1,
-                               .height = (int64_t)width,
-                               .planes = (int64_t)(width * height),
+                               .height = row_stride,
+                               .planes = (int64_t)(row_stride * height),
                   },
-                  .type = at_or(px_type_table_, std::string(frame->GetPixelFormatName().c_str()), SampleType_Unknown),
+                  .type = sample_type,
               },
               .hardware_timestamp = timestamp_ns,
               .hardware_frame_id = frame_id_++,
