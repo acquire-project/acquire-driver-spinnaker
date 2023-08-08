@@ -58,7 +58,7 @@ struct SpinnakerCamera final : private Camera
     void get_frame(void* im, size_t* nbytes, struct ImageInfo* info);
 
   private:
-    Spinnaker::CameraPtr pCam_;
+    Spinnaker::CameraPtr camera_;
     struct CameraProperties last_known_settings_;
     struct CameraPropertyMetadata last_known_capabilities_;
     uint64_t frame_id_;
@@ -407,7 +407,7 @@ spinnakercam_shutdown_(struct Driver* self_)
     return Device_Err;
 }
 
-SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr pCam)
+SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   : Camera{ .set = ::spinnakercam_set,
             .get = ::spinnakercam_get,
             .get_meta = ::spinnakercam_get_meta,
@@ -417,7 +417,7 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr pCam)
             .execute_trigger = ::spinnakercam_execute_trigger,
             .get_frame = ::spinnakercam_get_frame,
   }
-  , pCam_(pCam)
+  , camera_(camera)
   , last_known_settings_{}
   , px_type_table_ {
         { "Mono8", SampleType_u8 },
@@ -453,9 +453,9 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr pCam)
   }
   , frame_id_(0)
 {
-    CHECK(pCam->IsValid());
-    CHECK(!pCam->IsInitialized());
-    pCam->Init();
+    CHECK(camera->IsValid());
+    CHECK(!camera->IsInitialized());
+    camera->Init();
     // TODO: may need equivalent
     // grabber_.stop(); // just in case
     // grabber_.execute<ES::RemoteModule>("AcquisitionStop");
@@ -471,7 +471,7 @@ SpinnakerCamera::~SpinnakerCamera()
         // so we need to protect the call somehow.
         //stop();
         const std::scoped_lock lock(lock_);
-        pCam_->DeInit();
+        camera_->DeInit();
     } catch (...) {
         ;
     }
@@ -540,9 +540,9 @@ SpinnakerCamera::query_exposure_time_capabilities_(
   CameraPropertyMetadata* meta) const
 {
     meta->exposure_time_us = {
-        .writable = Spinnaker::GenApi::IsWritable(pCam_->ExposureTime),
-        .low = (float)pCam_->ExposureTime.GetMin(),
-        .high = (float)pCam_->ExposureTime.GetMax(),
+        .writable = Spinnaker::GenApi::IsWritable(camera_->ExposureTime),
+        .low = (float)camera_->ExposureTime.GetMin(),
+        .high = (float)camera_->ExposureTime.GetMax(),
         .type = PropertyType_FloatingPrecision,
     };
 }
@@ -553,9 +553,9 @@ SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
     // TODO: Spinnaker supports independent horizontal and vertical binning.
     // Assume horizontal is representative for now.
     meta->binning = {
-        .writable = Spinnaker::GenApi::IsWritable(pCam_->BinningHorizontal),
-        .low = (float)pCam_->BinningHorizontal.GetMin(),
-        .high = (float)pCam_->BinningHorizontal.GetMax(),
+        .writable = Spinnaker::GenApi::IsWritable(camera_->BinningHorizontal),
+        .low = (float)camera_->BinningHorizontal.GetMin(),
+        .high = (float)camera_->BinningHorizontal.GetMax(),
         .type = PropertyType_FixedPrecision,
     };
 }
@@ -565,15 +565,15 @@ SpinnakerCamera::query_roi_offset_capabilities_(
 {
     meta->offset = {
         .x = {
-          .writable = Spinnaker::GenApi::IsWritable(pCam_->OffsetX),
-          .low = (float)pCam_->OffsetX.GetMin(),
-          .high = (float)pCam_->OffsetX.GetMax(),
+          .writable = Spinnaker::GenApi::IsWritable(camera_->OffsetX),
+          .low = (float)camera_->OffsetX.GetMin(),
+          .high = (float)camera_->OffsetX.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
         .y = {
-          .writable = Spinnaker::GenApi::IsWritable(pCam_->OffsetY),
-          .low = (float)pCam_->OffsetY.GetMin(),
-          .high = (float)pCam_->OffsetY.GetMax(),
+          .writable = Spinnaker::GenApi::IsWritable(camera_->OffsetY),
+          .low = (float)camera_->OffsetY.GetMin(),
+          .high = (float)camera_->OffsetY.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
     };
@@ -584,15 +584,15 @@ SpinnakerCamera::query_roi_shape_capabilities_(
 {
     meta->shape = {
         .x = {
-          .writable = Spinnaker::GenApi::IsWritable(pCam_->Width),
-          .low = (float)pCam_->Width.GetMin(),
-          .high = (float)pCam_->Width.GetMax(),
+          .writable = Spinnaker::GenApi::IsWritable(camera_->Width),
+          .low = (float)camera_->Width.GetMin(),
+          .high = (float)camera_->Width.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
         .y = {
-          .writable = Spinnaker::GenApi::IsWritable(pCam_->Height),
-          .low = (float)pCam_->Height.GetMin(),
-          .high = (float)pCam_->Height.GetMax(),
+          .writable = Spinnaker::GenApi::IsWritable(camera_->Height),
+          .low = (float)camera_->Height.GetMin(),
+          .high = (float)camera_->Height.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
     };
@@ -604,7 +604,7 @@ SpinnakerCamera::query_pixel_type_capabilities_(
 {
     meta->supported_pixel_types = 0;
     Spinnaker::GenApi::StringList_t pixel_formats;
-    pCam_->PixelFormat.GetSymbolics(pixel_formats);
+    camera_->PixelFormat.GetSymbolics(pixel_formats);
     for (const auto& format : pixel_formats) {
         meta->supported_pixel_types |=
           (1ULL << at_or(px_type_table_, std::string(format.c_str()), SampleType_Unknown));
@@ -621,16 +621,16 @@ SpinnakerCamera::get(struct CameraProperties* properties)
 {
     const std::scoped_lock lock(lock_);
     *properties = {
-        .exposure_time_us = (float)pCam_->ExposureTime.GetValue(),
-        .binning = (uint8_t)pCam_->BinningHorizontal.GetValue(),
-        .pixel_type = at_or(px_type_table_, pixel_format_string(pCam_), SampleType_Unknown),
+        .exposure_time_us = (float)camera_->ExposureTime.GetValue(),
+        .binning = (uint8_t)camera_->BinningHorizontal.GetValue(),
+        .pixel_type = at_or(px_type_table_, pixel_format_string(camera_), SampleType_Unknown),
         .offset = {
-          .x = (uint32_t)pCam_->OffsetX.GetValue(),
-          .y = (uint32_t)pCam_->OffsetY.GetValue(),
+          .x = (uint32_t)camera_->OffsetX.GetValue(),
+          .y = (uint32_t)camera_->OffsetY.GetValue(),
         },
         .shape = {
-          .x = (uint32_t)pCam_->Width.GetValue(),
-          .y = (uint32_t)pCam_->Height.GetValue(),
+          .x = (uint32_t)camera_->Width.GetValue(),
+          .y = (uint32_t)camera_->Height.GetValue(),
         },
     };
     last_known_settings_ = *properties;
@@ -644,8 +644,8 @@ SpinnakerCamera::maybe_set_binning(uint8_t target, uint8_t last_value)
                        last_known_capabilities_.binning.low,
                        last_known_capabilities_.binning.high);
         if (last_known_capabilities_.binning.writable) {
-            pCam_->BinningHorizontal.SetValue(target);
-            pCam_->BinningVertical.SetValue(target);
+            camera_->BinningHorizontal.SetValue(target);
+            camera_->BinningVertical.SetValue(target);
         }
         return target;
     }
@@ -665,10 +665,10 @@ SpinnakerCamera::maybe_set_px_type(SampleType target, SampleType last_known)
         LOGE("Sample type %d is unrecognized.", target);
         return last_known;
     }
-    if (Spinnaker::GenApi::IsReadable(pCam_->PixelFormat) && Spinnaker::GenApi::IsWritable(pCam_->PixelFormat)) {
-        const auto entry = pCam_->PixelFormat.GetEntryByName(Spinnaker::GenICam::gcstring(format_name.c_str()));
+    if (Spinnaker::GenApi::IsReadable(camera_->PixelFormat) && Spinnaker::GenApi::IsWritable(camera_->PixelFormat)) {
+        const auto entry = camera_->PixelFormat.GetEntryByName(Spinnaker::GenICam::gcstring(format_name.c_str()));
         if (Spinnaker::GenApi::IsReadable(entry)) {
-            pCam_->PixelFormat.SetIntValue(entry->GetValue());
+            camera_->PixelFormat.SetIntValue(entry->GetValue());
         } else {
             LOGE("Sample type %d is recognized as spinnaker pixel format %s, but not supported by this camera.", target, format_name.c_str());
             return last_known;
@@ -687,7 +687,7 @@ SpinnakerCamera::maybe_set_offset(
                          last_known_capabilities_.offset.x.low,
                          last_known_capabilities_.offset.x.high);
         if (last_known_capabilities_.offset.x.writable) {
-            pCam_->OffsetX = target.x;
+            camera_->OffsetX = target.x;
         }
         last.x = target.x;
     }
@@ -696,7 +696,7 @@ SpinnakerCamera::maybe_set_offset(
                          last_known_capabilities_.offset.y.low,
                          last_known_capabilities_.offset.y.high);
         if (last_known_capabilities_.offset.y.writable) {
-            pCam_->OffsetY = target.y;
+            camera_->OffsetY = target.y;
         }
         last.y = target.y;
     }
@@ -713,7 +713,7 @@ SpinnakerCamera::maybe_set_shape(
                          last_known_capabilities_.shape.x.low,
                          last_known_capabilities_.shape.x.high);
         if (last_known_capabilities_.shape.x.writable) {
-            pCam_->Width = target.x;
+            camera_->Width = target.x;
         }
         last.x = target.x;
     }
@@ -722,7 +722,7 @@ SpinnakerCamera::maybe_set_shape(
                          last_known_capabilities_.shape.y.low,
                          last_known_capabilities_.shape.y.high);
         if (last_known_capabilities_.shape.y.writable) {
-            pCam_->Height = target.y;
+            camera_->Height = target.y;
         }
         last.y = target.y;
     }
@@ -742,8 +742,8 @@ SpinnakerCamera::start()
 
     // TODO: should we configure continuous acquisition outside of start?
     // How does singleshot/snapshot acquisition work?
-    Spinnaker::GenApi::INodeMap& nodeMapTLDevice = pCam_->GetTLDeviceNodeMap();
-    Spinnaker::GenApi::INodeMap& nodeMap = pCam_->GetNodeMap();
+    Spinnaker::GenApi::INodeMap& nodeMapTLDevice = camera_->GetTLDeviceNodeMap();
+    Spinnaker::GenApi::INodeMap& nodeMap = camera_->GetNodeMap();
 
     Spinnaker::GenApi::CEnumerationPtr ptrAcquisitionMode =
       nodeMap.GetNode("AcquisitionMode");
@@ -764,14 +764,14 @@ SpinnakerCamera::start()
     const int64_t acquisitionModeContinuous = ptrAcquisitionModeContinuous->GetValue();
     ptrAcquisitionMode->SetIntValue(acquisitionModeContinuous);
 
-    pCam_->BeginAcquisition();
+    camera_->BeginAcquisition();
 }
 
 void
 SpinnakerCamera::stop()
 {
     const std::scoped_lock lock(lock_);
-    pCam_->EndAcquisition();
+    camera_->EndAcquisition();
 }
 
 void
@@ -779,15 +779,15 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
 {
     const std::scoped_lock lock(lock_);
 
-    const SampleType sample_type = at_or(px_type_table_, pixel_format_string(pCam_), SampleType_Unknown);
+    const SampleType sample_type = at_or(px_type_table_, pixel_format_string(camera_), SampleType_Unknown);
 
-    const uint32_t width = (int32_t)pCam_->Width.GetValue();
-    const uint32_t height = (int32_t)pCam_->Height.GetValue();
+    const uint32_t width = (int32_t)camera_->Width.GetValue();
+    const uint32_t height = (int32_t)camera_->Height.GetValue();
     
     // TODO: anything else we can if LinePitch is not readable?
     int64_t row_stride = width;
-    if (Spinnaker::GenApi::IsReadable(pCam_->LinePitch)) {
-        const int64_t row_bytes = pCam_->LinePitch();
+    if (Spinnaker::GenApi::IsReadable(camera_->LinePitch)) {
+        const int64_t row_bytes = camera_->LinePitch();
         const size_t element_bytes = sample_type_bytes(sample_type);
         row_stride = row_bytes / element_bytes;
     }
@@ -814,7 +814,7 @@ SpinnakerCamera::execute_trigger() const
 {
     // TODO: check if the lock is really needed.
     const std::scoped_lock lock(lock_);
-    pCam_->TriggerSoftware();
+    camera_->TriggerSoftware();
 }
 
 void
@@ -824,22 +824,20 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     // Locking: This function is effectively read-only when it comes to
     // spinnaker's camera state, so it doesn't need a scoped lock?
 
-    // TODO: Check if we should pass explicit timeout.
-    Spinnaker::ImagePtr pResultImage = pCam_->GetNextImage();
+    // Adapted from the Acquisition.cpp example distributed with the Spinnaker SDK.
 
-    // Adapted from the Spinnaker Acquisition example.
-    if (pResultImage->IsIncomplete()) {
-        // Retrieve and print the image status description
-        LOGE("Image incomplete: %s\n",
-             Spinnaker::Image::GetImageStatusDescription(
-               pResultImage->GetImageStatus()));
+    // TODO: Check if we should pass explicit timeout.
+    Spinnaker::ImagePtr image = camera_->GetNextImage();
+    if (image->IsIncomplete()) {
+        LOGE("Image incomplete: %s\n", Spinnaker::Image::GetImageStatusDescription(image->GetImageStatus()));
     } else {
-        const size_t width = pResultImage->GetWidth();
-        const size_t height = pResultImage->GetHeight();
+        const size_t width = image->GetWidth();
+        const size_t height = image->GetHeight();
 
         LOG("Grabbed width = %d, height = %d", width, height);
 
-        const Spinnaker::IImage* frame = pResultImage.get();
+        // TODO: do we really need the get?
+        const Spinnaker::IImage* frame = image.get();
         EXPECT(frame->GetData(), "Expected non-null pointer");
 
         // TODO: check resolution of this timestamp
@@ -870,7 +868,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
         };
     }
 
-    pResultImage->Release();
+    image->Release();
 }
 
 //
@@ -895,9 +893,9 @@ SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
     // DeviceManager device_id expects a uint8
     EXPECT(i < (1 << 8), "Expected a uint8 device index. Got: %llu", i);
 
-    Spinnaker::CameraList camList = system_->GetCameras();
-    Spinnaker::CameraPtr pCam = camList.GetByIndex((unsigned int)i);
-    Spinnaker::GenApi::INodeMap & nodeMap = pCam->GetTLDeviceNodeMap();
+    Spinnaker::CameraList camera_list = system_->GetCameras();
+    Spinnaker::CameraPtr camera = camera_list.GetByIndex((unsigned int)i);
+    Spinnaker::GenApi::INodeMap & nodeMap = camera->GetTLDeviceNodeMap();
 
     const Spinnaker::GenApi::CStringPtr vendor_name =
       nodeMap.GetNode("DeviceVendorName");
@@ -922,8 +920,8 @@ SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
 uint32_t
 SpinnakerDriver::device_count()
 {
-    Spinnaker::CameraList camList = system_->GetCameras();
-    return camList.GetSize();
+    Spinnaker::CameraList camera_list = system_->GetCameras();
+    return camera_list.GetSize();
 }
 
 void
@@ -933,10 +931,9 @@ SpinnakerDriver::open(uint64_t device_id, struct Device** out)
     EXPECT(device_id < (1ULL << 8 * sizeof(int)) - 1,
            "Expected an int32 device id. Got: %llu",
            device_id);
-    Spinnaker::CameraList camList = system_->GetCameras();
-    Spinnaker::CameraPtr pCam = camList.GetByIndex((unsigned int)device_id);
-    const auto cam = new SpinnakerCamera(pCam);
-    *out = (Device*)cam;
+    Spinnaker::CameraList camera_list = system_->GetCameras();
+    Spinnaker::CameraPtr camera = camera_list.GetByIndex((unsigned int)device_id);
+    *out = (Device*)new SpinnakerCamera(camera);
 }
 
 void
