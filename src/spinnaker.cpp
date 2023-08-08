@@ -116,25 +116,6 @@ at_or(const std::unordered_map<K, V>& table, const K& key, V dflt)
     return it->second;
 }
 
-size_t
-sample_type_bytes(const SampleType sample_type) {
-    switch (sample_type) {
-        case SampleType_u8:
-        case SampleType_i8:
-            return 1;
-        case SampleType_u10:
-        case SampleType_u12:
-        case SampleType_u14:
-        case SampleType_u16:
-        case SampleType_i16:
-            return 2;
-        case SampleType_f32:
-            return 4;
-    };
-    // TODO: error instead.
-    return 0;
-}
-
 std::string
 pixel_format_string(const Spinnaker::CameraPtr & camera) {
     const Spinnaker::GenICam::gcstring name = *(camera->PixelFormat);
@@ -689,19 +670,9 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
 {
     const std::scoped_lock lock(lock_);
 
-    const SampleType sample_type = at_or(px_type_table_, pixel_format_string(camera_), SampleType_Unknown);
-
     const uint32_t width = (int32_t)camera_->Width.GetValue();
     const uint32_t height = (int32_t)camera_->Height.GetValue();
     
-    // TODO: anything else we can do if LinePitch is not readable?
-    int64_t row_stride = width;
-    if (IsReadable(camera_->LinePitch)) {
-        const int64_t row_bytes = camera_->LinePitch();
-        const size_t element_bytes = sample_type_bytes(sample_type);
-        row_stride = row_bytes / element_bytes;
-    }
-
     *shape = {
         .dims = {
             .channels = 1,
@@ -712,10 +683,10 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
         .strides = {
           .channels = 1,
           .width = 1,
-          .height = row_stride,
-          .planes = row_stride*height,
+          .height = width,
+          .planes = width*height,
         },
-        .type = sample_type,
+        .type = at_or(px_type_table_, pixel_format_string(camera_), SampleType_Unknown),
     };
 }
 
@@ -744,12 +715,10 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
         const size_t height = frame->GetHeight();
         const uint64_t timestamp_ns = frame->GetTimeStamp();
 
-        const size_t row_bytes = frame->GetStride();
-        const SampleType sample_type = at_or(px_type_table_, std::string(frame->GetPixelFormatName().c_str()), SampleType_Unknown);
-        const size_t element_bytes = sample_type_bytes(sample_type);
-        const int64_t row_stride = (int64_t)(row_bytes / element_bytes);
-
         EXPECT(frame->GetData(), "Expected non-null pointer");
+        // The spinnaker default buffers may be aligned to certain byte
+        // boundaries (e.g. 1024 for better performance over USB3), so
+        // the buffer may be larger than acquire's, but not vice versa.
         EXPECT(*nbytes <= frame->GetBufferSize(), "Expected frame buffer size to be at least that allocated: %d", *nbytes);
         std::memcpy(im, frame->GetData(), *nbytes);
 
@@ -761,10 +730,10 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                             .planes = 1 },
                   .strides = { .channels = 1,
                                .width = 1,
-                               .height = row_stride,
-                               .planes = (int64_t)(row_stride * height),
+                               .height = (int64_t)width,
+                               .planes = (int64_t)(width * height),
                   },
-                  .type = sample_type,
+                  .type = at_or(px_type_table_, std::string(frame->GetPixelFormatName().c_str()), SampleType_Unknown),
               },
               .hardware_timestamp = timestamp_ns,
               .hardware_frame_id = frame_id_++,
