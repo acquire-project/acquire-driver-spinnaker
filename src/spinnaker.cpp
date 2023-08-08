@@ -600,19 +600,11 @@ SpinnakerCamera::maybe_set_px_type(SampleType target, SampleType last_known)
         return last_known;
     }
     const std::string format_name = at_or(px_type_inv_table_, target, std::string());
-    if (format_name.empty()) {
-        // TODO: should this error?
-        LOGE("Sample type %d is unrecognized.", target);
-        return last_known;
-    }
+    EXPECT(!format_name.empty(), "Sample type %d unrecognized", target);
     if (Spinnaker::GenApi::IsReadable(camera_->PixelFormat) && Spinnaker::GenApi::IsWritable(camera_->PixelFormat)) {
         const auto entry = camera_->PixelFormat.GetEntryByName(Spinnaker::GenICam::gcstring(format_name.c_str()));
-        if (Spinnaker::GenApi::IsReadable(entry)) {
-            camera_->PixelFormat.SetIntValue(entry->GetValue());
-        } else {
-            LOGE("Sample type %d is recognized as spinnaker pixel format %s, but not supported by this camera.", target, format_name.c_str());
-            return last_known;
-        }   
+        EXPECT(Spinnaker::GenApi::IsReadable(entry), "Sample type %d recognized as pixel format %s, but not supported by this camera.", target, format_name.c_str());
+        camera_->PixelFormat.SetIntValue(entry->GetValue());
     }
     return target;
 }
@@ -682,15 +674,8 @@ SpinnakerCamera::start()
 
     // TODO: should we configure continuous acquisition outside of start?
     // How does singleshot/snapshot acquisition work?
-
-    if (!IsReadable(camera_->AcquisitionMode) || !IsWritable(camera_->AcquisitionMode)) {
-        throw std::runtime_error("Unable to get and set acquisition mode.");
-    }
-
-    if (!IsReadable(camera_->AcquisitionMode.GetEntry((int64_t)Spinnaker::AcquisitionMode_Continuous))) {
-        throw std::runtime_error("Unable to get or set acquisition mode to continuous.");
-    }
-
+    EXPECT(IsReadable(camera_->AcquisitionMode) && IsWritable(camera_->AcquisitionMode), "Unable to get and set acquisition mode.");
+    EXPECT(IsReadable(camera_->AcquisitionMode.GetEntry((int64_t)Spinnaker::AcquisitionMode_Continuous)), "Unable to get or set acquisition mode to continuous.");
     camera_->AcquisitionMode.SetValue(Spinnaker::AcquisitionMode_Continuous);
 
     camera_->BeginAcquisition();
@@ -819,6 +804,8 @@ SpinnakerDriver::SpinnakerDriver(Spinnaker::SystemPtr system)
 void
 SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
 {
+    // TODO: shouldn't this check be done earlier?
+    // Spinnaker is not too fussy.
     // DeviceManager device_id expects a uint8
     EXPECT(i < (1 << 8), "Expected a uint8 device index. Got: %llu", i);
 
