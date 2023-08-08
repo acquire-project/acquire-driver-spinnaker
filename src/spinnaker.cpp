@@ -739,29 +739,23 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     // spinnaker's camera state, so it doesn't need a scoped lock?
 
     // Adapted from the Acquisition.cpp example distributed with the Spinnaker SDK.
+    Spinnaker::ImagePtr frame = camera_->GetNextImage();
 
-    // TODO: Check if we should pass explicit timeout.
-    Spinnaker::ImagePtr image = camera_->GetNextImage();
-    if (image->IsIncomplete()) {
-        LOGE("Image incomplete: %s\n", Spinnaker::Image::GetImageStatusDescription(image->GetImageStatus()));
+    if (frame->IsIncomplete()) {
+        LOGE("Image incomplete: %s", Spinnaker::Image::GetImageStatusDescription(frame->GetImageStatus()));
     } else {
-        const size_t width = image->GetWidth();
-        const size_t height = image->GetHeight();
 
-        LOG("Grabbed width = %d, height = %d", width, height);
-
-        // TODO: do we really need the get?
-        const Spinnaker::IImage* frame = image.get();
-        EXPECT(frame->GetData(), "Expected non-null pointer");
-
-        // TODO: check resolution of this timestamp
-        const auto timestamp_ns = frame->GetTimeStamp();
+        const size_t width = frame->GetWidth();
+        const size_t height = frame->GetHeight();
+        const uint64_t timestamp_ns = frame->GetTimeStamp();
 
         const size_t row_bytes = frame->GetStride();
         const SampleType sample_type = at_or(px_type_table_, std::string(frame->GetPixelFormatName().c_str()), SampleType_Unknown);
         const size_t element_bytes = sample_type_bytes(sample_type);
         const int64_t row_stride = (int64_t)(row_bytes / element_bytes);
-        CHECK(*nbytes <= frame->GetBufferSize());
+
+        EXPECT(frame->GetData(), "Expected non-null pointer");
+        EXPECT(*nbytes <= frame->GetBufferSize(), "Expected frame buffer size to be at least that allocated: %d", *nbytes);
         std::memcpy(im, frame->GetData(), *nbytes);
 
         *info = {
@@ -782,7 +776,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
         };
     }
 
-    image->Release();
+    frame->Release();
 }
 
 //
@@ -836,8 +830,7 @@ SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
 uint32_t
 SpinnakerDriver::device_count()
 {
-    Spinnaker::CameraList camera_list = system_->GetCameras();
-    return camera_list.GetSize();
+    return (uint32_t)system_->GetCameras().GetSize();
 }
 
 void
