@@ -74,7 +74,7 @@ main()
         OK(acquire_get_configuration_metadata(runtime, &metadata));
 
         props.video[0].camera.settings.binning = 1;
-        props.video[0].camera.settings.pixel_type = SampleType_u12;
+        props.video[0].camera.settings.pixel_type = SampleType_u8;
         props.video[0].camera.settings.shape = {
             .x = (uint32_t)metadata.video[0].camera.shape.x.high,
             .y = (uint32_t)metadata.video[0].camera.shape.y.high,

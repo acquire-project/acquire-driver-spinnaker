@@ -480,7 +480,7 @@ SpinnakerCamera::query_exposure_time_capabilities_(
   CameraPropertyMetadata* meta) const
 {
     meta->exposure_time_us = {
-        .writable = Spinnaker::GenApi::IsWritable(camera_->ExposureTime),
+        .writable = IsWritable(camera_->ExposureTime),
         .low = (float)camera_->ExposureTime.GetMin(),
         .high = (float)camera_->ExposureTime.GetMax(),
         .type = PropertyType_FloatingPrecision,
@@ -493,7 +493,7 @@ SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
     // TODO: Spinnaker supports independent horizontal and vertical binning.
     // Assume horizontal is representative for now.
     meta->binning = {
-        .writable = Spinnaker::GenApi::IsWritable(camera_->BinningHorizontal),
+        .writable = IsWritable(camera_->BinningHorizontal),
         .low = (float)camera_->BinningHorizontal.GetMin(),
         .high = (float)camera_->BinningHorizontal.GetMax(),
         .type = PropertyType_FixedPrecision,
@@ -505,13 +505,13 @@ SpinnakerCamera::query_roi_offset_capabilities_(
 {
     meta->offset = {
         .x = {
-          .writable = Spinnaker::GenApi::IsWritable(camera_->OffsetX),
+          .writable = IsWritable(camera_->OffsetX),
           .low = (float)camera_->OffsetX.GetMin(),
           .high = (float)camera_->OffsetX.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
         .y = {
-          .writable = Spinnaker::GenApi::IsWritable(camera_->OffsetY),
+          .writable = IsWritable(camera_->OffsetY),
           .low = (float)camera_->OffsetY.GetMin(),
           .high = (float)camera_->OffsetY.GetMax(),
           .type = PropertyType_FixedPrecision,
@@ -524,13 +524,13 @@ SpinnakerCamera::query_roi_shape_capabilities_(
 {
     meta->shape = {
         .x = {
-          .writable = Spinnaker::GenApi::IsWritable(camera_->Width),
+          .writable = IsWritable(camera_->Width),
           .low = (float)camera_->Width.GetMin(),
           .high = (float)camera_->Width.GetMax(),
           .type = PropertyType_FixedPrecision,
         },
         .y = {
-          .writable = Spinnaker::GenApi::IsWritable(camera_->Height),
+          .writable = IsWritable(camera_->Height),
           .low = (float)camera_->Height.GetMin(),
           .high = (float)camera_->Height.GetMax(),
           .type = PropertyType_FixedPrecision,
@@ -601,9 +601,9 @@ SpinnakerCamera::maybe_set_px_type(SampleType target, SampleType last_known)
     }
     const std::string format_name = at_or(px_type_inv_table_, target, std::string());
     EXPECT(!format_name.empty(), "Sample type %d unrecognized", target);
-    if (Spinnaker::GenApi::IsReadable(camera_->PixelFormat) && Spinnaker::GenApi::IsWritable(camera_->PixelFormat)) {
+    if (IsReadable(camera_->PixelFormat) && IsWritable(camera_->PixelFormat)) {
         const auto entry = camera_->PixelFormat.GetEntryByName(Spinnaker::GenICam::gcstring(format_name.c_str()));
-        EXPECT(Spinnaker::GenApi::IsReadable(entry), "Sample type %d recognized as pixel format %s, but not supported by this camera.", target, format_name.c_str());
+        EXPECT(IsReadable(entry), "Sample type %d recognized as pixel format %s, but not supported by this camera.", target, format_name.c_str());
         camera_->PixelFormat.SetIntValue(entry->GetValue());
     }
     return target;
@@ -700,7 +700,7 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
     
     // TODO: anything else we can if LinePitch is not readable?
     int64_t row_stride = width;
-    if (Spinnaker::GenApi::IsReadable(camera_->LinePitch)) {
+    if (IsReadable(camera_->LinePitch)) {
         const int64_t row_bytes = camera_->LinePitch();
         const size_t element_bytes = sample_type_bytes(sample_type);
         row_stride = row_bytes / element_bytes;
