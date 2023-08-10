@@ -15,10 +15,9 @@ if(spinnaker_include_dir)
     target_include_directories(${tgt} INTERFACE ${spinnaker_include_dir})
 
     if(WIN32)
-        # TODO: set imported_implib for windows or link to dll.
-        # https://cmake.org/cmake/help/latest/prop_tgt/IMPORTED_IMPLIB.html
         set_target_properties(${tgt} PROPERTIES
-            IMPORTED_LOCATION "${spinnaker_include_dir}../../lib/spinnaker.lib"
+            IMPORTED_LOCATION "${spinnaker_include_dir}../bin64/vs2015/Spinnaker_v140.dll"
+            IMPORTED_IMPLIB "${spinnaker_include_dir}../lib64/vs2015/Spinnaker_v140.lib"
         )
     elseif(APPLE)
         set_target_properties(${tgt} PROPERTIES

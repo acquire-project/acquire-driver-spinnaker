@@ -123,7 +123,7 @@ main()
                     ++nframes;
                 }
                 {
-                    uint32_t n = consumed_bytes(beg, end);
+                    size_t n = consumed_bytes(beg, end);
                     OK(acquire_unmap_read(runtime, 0, n));
                     if (n)
                         LOG("stream %d consumed bytes %d", 0, n);
