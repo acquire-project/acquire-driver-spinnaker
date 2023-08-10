@@ -17,7 +17,10 @@ if(spinnaker_include_dir)
     if(WIN32)
         set_target_properties(${tgt} PROPERTIES
             IMPORTED_LOCATION "${spinnaker_include_dir}../bin64/vs2015/Spinnaker_v140.dll"
+            IMPORTED_LOCATION_DEBUG "${spinnaker_include_dir}../bin64/vs2015/Spinnakerd_v140.dll"
             IMPORTED_IMPLIB "${spinnaker_include_dir}../lib64/vs2015/Spinnaker_v140.lib"
+            IMPORTED_IMPLIB_DEBUG "${spinnaker_include_dir}../lib64/vs2015/Spinnakerd_v140.lib"
+            IMPORTED_CONFIGURATIONS "RELEASE;DEBUG"
         )
     elseif(APPLE)
         set_target_properties(${tgt} PROPERTIES
