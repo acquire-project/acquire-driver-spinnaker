@@ -55,9 +55,9 @@ struct SpinnakerCamera final : private Camera
     mutable std::mutex lock_;
 
     // Maps GenICam PixelFormat names to SampleType.
-    const std::unordered_map<std::string, SampleType>
+    const std::unordered_map<Spinnaker::PixelFormatEnums, SampleType>
       px_type_table_;
-    const std::unordered_map<SampleType, std::string>
+    const std::unordered_map<SampleType, Spinnaker::PixelFormatEnums>
       px_type_inv_table_;
 
     // Maps GenICam TriggerActivation names to TriggerEdge
@@ -114,12 +114,6 @@ at_or(const std::unordered_map<K, V>& table, const K& key, V dflt)
         return dflt;
     }
     return it->second;
-}
-
-std::string
-pixel_format_string(const Spinnaker::CameraPtr & camera) {
-    const Spinnaker::GenICam::gcstring name = *(camera->PixelFormat);
-    return std::string(name.c_str());
 }
 
 enum DeviceStatusCode
@@ -341,18 +335,24 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   , camera_(camera)
   , last_known_settings_{}
   , px_type_table_ {
-        { "Mono8", SampleType_u8 },
-        { "Mono10", SampleType_u10 },
-        { "Mono12", SampleType_u12 },
-        { "Mono14", SampleType_u14 },
-        { "Mono16", SampleType_u16 },
+        { Spinnaker::PixelFormat_Mono8, SampleType_u8 },
+        { Spinnaker::PixelFormat_Mono8s, SampleType_i8 },
+        { Spinnaker::PixelFormat_Mono10, SampleType_u10 },
+        { Spinnaker::PixelFormat_Mono12, SampleType_u12 },
+        { Spinnaker::PixelFormat_Mono14, SampleType_u14 },
+        { Spinnaker::PixelFormat_Mono16, SampleType_u16 },
+        { Spinnaker::PixelFormat_Mono16s, SampleType_i16 },
+        { Spinnaker::PixelFormat_Mono32f, SampleType_f32 },
     }
   , px_type_inv_table_ {
-      { SampleType_u8 , "Mono8"},
-      { SampleType_u10, "Mono10"},
-      { SampleType_u12, "Mono12"},
-      { SampleType_u14, "Mono14"},
-      { SampleType_u16, "Mono16"},
+      { SampleType_u8 , Spinnaker::PixelFormat_Mono8},
+      { SampleType_i8 , Spinnaker::PixelFormat_Mono8s},
+      { SampleType_u10, Spinnaker::PixelFormat_Mono10},
+      { SampleType_u12, Spinnaker::PixelFormat_Mono12},
+      { SampleType_u14, Spinnaker::PixelFormat_Mono14},
+      { SampleType_u16, Spinnaker::PixelFormat_Mono16},
+      { SampleType_i16, Spinnaker::PixelFormat_Mono16s},
+      { SampleType_f32, Spinnaker::PixelFormat_Mono32f},
   }
   ,trig_edge_table_{
       { "RisingEdge", TriggerEdge_Rising },
@@ -515,11 +515,15 @@ SpinnakerCamera::query_pixel_type_capabilities_(
   CameraPropertyMetadata* meta) const
 {
     meta->supported_pixel_types = 0;
-    Spinnaker::GenApi::StringList_t pixel_formats;
-    camera_->PixelFormat.GetSymbolics(pixel_formats);
-    for (const Spinnaker::GenICam::gcstring & format : pixel_formats) {
-        meta->supported_pixel_types |=
-          (1ULL << at_or(px_type_table_, std::string(format.c_str()), SampleType_Unknown));
+    Spinnaker::GenApi::NodeList_t pixel_formats;
+    camera_->PixelFormat.GetEntries(pixel_formats);
+    for (Spinnaker::GenApi::INode* node : pixel_formats) {
+        auto entry = dynamic_cast<Spinnaker::GenApi::IEnumEntry*>(node);
+        EXPECT(entry, "Unable to cast to enum entry.");
+        const auto format = (Spinnaker::PixelFormatEnums)entry->GetValue();
+        const SampleType sample_type =
+          at_or(px_type_table_, format, SampleType_Unknown);
+        meta->supported_pixel_types |= (1ULL << sample_type);
     }
 }
 
@@ -535,7 +539,7 @@ SpinnakerCamera::get(struct CameraProperties* properties)
     *properties = {
         .exposure_time_us = (float)camera_->ExposureTime.GetValue(),
         .binning = (uint8_t)camera_->BinningHorizontal.GetValue(),
-        .pixel_type = at_or(px_type_table_, pixel_format_string(camera_), SampleType_Unknown),
+        .pixel_type = at_or(px_type_table_, camera_->PixelFormat(), SampleType_Unknown),
         .offset = {
           .x = (uint32_t)camera_->OffsetX.GetValue(),
           .y = (uint32_t)camera_->OffsetY.GetValue(),
@@ -571,11 +575,19 @@ SpinnakerCamera::maybe_set_px_type(SampleType target, SampleType last_known)
     if (target == last_known) {
         return last_known;
     }
-    const std::string format_name = at_or(px_type_inv_table_, target, std::string());
-    EXPECT(!format_name.empty(), "Sample type %d unrecognized", target);
+    const Spinnaker::PixelFormatEnums format =
+      at_or(px_type_inv_table_, target, Spinnaker::UNKNOWN_PIXELFORMAT);
+    EXPECT(format != Spinnaker::UNKNOWN_PIXELFORMAT,
+           "Sample type %d unrecognized",
+           target);
     if (IsReadable(camera_->PixelFormat) && IsWritable(camera_->PixelFormat)) {
-        const auto entry = camera_->PixelFormat.GetEntryByName(Spinnaker::GenICam::gcstring(format_name.c_str()));
-        EXPECT(IsReadable(entry), "Sample type %d recognized as pixel format %s, but not supported by this camera.", target, format_name.c_str());
+        Spinnaker::GenApi::IEnumEntry* entry =
+          camera_->PixelFormat.GetEntry((int)format);
+        EXPECT(IsReadable(entry),
+               "Sample type %d recognized as pixel format %d, but not "
+               "supported by this camera.",
+               target,
+               format);
         camera_->PixelFormat.SetIntValue(entry->GetValue());
     }
     return target;
@@ -604,7 +616,7 @@ SpinnakerCamera::maybe_set_offset(
         }
         last.y = target.y;
     }
-    return last;    
+    return last;
 }
 
 CameraProperties::camera_properties_shape_s
@@ -646,8 +658,12 @@ SpinnakerCamera::start()
 
     // TODO: should we configure continuous acquisition outside of start?
     // How does singleshot/snapshot acquisition work?
-    EXPECT(IsReadable(camera_->AcquisitionMode) && IsWritable(camera_->AcquisitionMode), "Unable to get and set acquisition mode.");
-    EXPECT(IsReadable(camera_->AcquisitionMode.GetEntry((int64_t)Spinnaker::AcquisitionMode_Continuous)), "Unable to get or set acquisition mode to continuous.");
+    EXPECT(IsReadable(camera_->AcquisitionMode) &&
+             IsWritable(camera_->AcquisitionMode),
+           "Unable to get and set acquisition mode.");
+    EXPECT(IsReadable(camera_->AcquisitionMode.GetEntry(
+             (int64_t)Spinnaker::AcquisitionMode_Continuous)),
+           "Unable to get or set acquisition mode to continuous.");
     camera_->AcquisitionMode.SetValue(Spinnaker::AcquisitionMode_Continuous);
 
     camera_->BeginAcquisition();
@@ -672,7 +688,7 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
 
     const uint32_t width = (int32_t)camera_->Width.GetValue();
     const uint32_t height = (int32_t)camera_->Height.GetValue();
-    
+
     *shape = {
         .dims = {
             .channels = 1,
@@ -686,7 +702,7 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
           .height = width,
           .planes = width*height,
         },
-        .type = at_or(px_type_table_, pixel_format_string(camera_), SampleType_Unknown),
+        .type = at_or(px_type_table_, camera_->PixelFormat(), SampleType_Unknown),
     };
 }
 
@@ -705,11 +721,14 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     // memory associated with any retrieved frames.
     const std::scoped_lock lock(lock_);
 
-    // Adapted from the Acquisition.cpp example distributed with the Spinnaker SDK.
+    // Adapted from the Acquisition.cpp example distributed with the Spinnaker
+    // SDK.
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
 
     if (frame->IsIncomplete()) {
-        LOGE("Image incomplete: %s", Spinnaker::Image::GetImageStatusDescription(frame->GetImageStatus()));
+        LOGE(
+          "Image incomplete: %s",
+          Spinnaker::Image::GetImageStatusDescription(frame->GetImageStatus()));
     } else {
         const size_t width = frame->GetWidth();
         const size_t height = frame->GetHeight();
@@ -719,7 +738,9 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
         // The spinnaker default buffers may be aligned to certain byte
         // boundaries (e.g. 1024 for better performance over USB3), so
         // the buffer may be larger than acquire's, but not vice versa.
-        EXPECT(*nbytes <= frame->GetBufferSize(), "Expected frame buffer size to be at least that allocated: %d", *nbytes);
+        EXPECT(*nbytes <= frame->GetBufferSize(),
+               "Expected frame buffer size to be at least that allocated: %d",
+               *nbytes);
         std::memcpy(im, frame->GetData(), *nbytes);
 
         *info = {
@@ -733,7 +754,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                                .height = (int64_t)width,
                                .planes = (int64_t)(width * height),
                   },
-                  .type = at_or(px_type_table_, std::string(frame->GetPixelFormatName().c_str()), SampleType_Unknown),
+                  .type = at_or(px_type_table_, frame->GetPixelFormat(), SampleType_Unknown),
               },
               .hardware_timestamp = timestamp_ns,
               .hardware_frame_id = frame_id_++,
@@ -768,7 +789,7 @@ SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
 
     Spinnaker::CameraList camera_list = system_->GetCameras();
     Spinnaker::CameraPtr camera = camera_list.GetByIndex((unsigned int)i);
-    Spinnaker::GenApi::INodeMap & nodeMap = camera->GetTLDeviceNodeMap();
+    Spinnaker::GenApi::INodeMap& nodeMap = camera->GetTLDeviceNodeMap();
 
     const Spinnaker::GenApi::CStringPtr vendor_name =
       nodeMap.GetNode("DeviceVendorName");
@@ -804,7 +825,8 @@ SpinnakerDriver::open(uint64_t device_id, struct Device** out)
            "Expected an int32 device id. Got: %llu",
            device_id);
     Spinnaker::CameraList camera_list = system_->GetCameras();
-    Spinnaker::CameraPtr camera = camera_list.GetByIndex((unsigned int)device_id);
+    Spinnaker::CameraPtr camera =
+      camera_list.GetByIndex((unsigned int)device_id);
     *out = (Device*)new SpinnakerCamera(camera);
 }
 
