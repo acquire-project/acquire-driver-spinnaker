@@ -14,6 +14,8 @@ if(spinnaker_include_dir)
     add_library(${tgt} SHARED IMPORTED)
     target_include_directories(${tgt} INTERFACE ${spinnaker_include_dir})
 
+    # See the following guide for this definition:
+    # https://cmake.org/cmake/help/latest/guide/importing-exporting/index.html#importing-libraries
     if(WIN32)
         set_target_properties(${tgt} PROPERTIES
             IMPORTED_LOCATION "${spinnaker_include_dir}../bin64/vs2015/Spinnaker_v140.dll"
