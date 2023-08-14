@@ -1,5 +1,4 @@
 /// @file Driver wrapping the spinnaker SDK.
-/// Written to target the ORX-10G-51S5
 #include "device/props/camera.h"
 #include "device/kit/camera.h"
 #include "device/kit/driver.h"
@@ -33,6 +32,24 @@ constexpr size_t NBUFFERS = 16;
 
 namespace {
 
+const std::unordered_map<Spinnaker::TriggerActivationEnums, TriggerEdge>
+  trig_edge_table{
+      { Spinnaker::TriggerActivation_RisingEdge, TriggerEdge_Rising },
+      { Spinnaker::TriggerActivation_FallingEdge, TriggerEdge_Falling },
+      { Spinnaker::TriggerActivation_AnyEdge, TriggerEdge_AnyEdge },
+      { Spinnaker::TriggerActivation_LevelHigh, TriggerEdge_LevelHigh },
+      { Spinnaker::TriggerActivation_LevelLow, TriggerEdge_LevelLow },
+  };
+
+const std::unordered_map<TriggerEdge, Spinnaker::TriggerActivationEnums>
+  trig_edge_inv_table{
+      { TriggerEdge_Rising, Spinnaker::TriggerActivation_RisingEdge },
+      { TriggerEdge_Falling, Spinnaker::TriggerActivation_FallingEdge },
+      { TriggerEdge_AnyEdge, Spinnaker::TriggerActivation_AnyEdge },
+      { TriggerEdge_LevelHigh, Spinnaker::TriggerActivation_LevelHigh },
+      { TriggerEdge_LevelLow, Spinnaker::TriggerActivation_LevelLow },
+  };
+
 struct SpinnakerCamera final : private Camera
 {
     explicit SpinnakerCamera(Spinnaker::CameraPtr camera);
@@ -54,24 +71,10 @@ struct SpinnakerCamera final : private Camera
     uint64_t frame_id_;
     mutable std::mutex lock_;
 
-    // Maps GenICam PixelFormat names to SampleType.
     const std::unordered_map<Spinnaker::PixelFormatEnums, SampleType>
       px_type_table_;
     const std::unordered_map<SampleType, Spinnaker::PixelFormatEnums>
       px_type_inv_table_;
-
-    // Maps GenICam TriggerActivation names to TriggerEdge
-    const std::unordered_map<std::string, TriggerEdge> trig_edge_table_;
-    const std::unordered_map<TriggerEdge, std::string> trig_edge_inv_table_;
-
-    enum TrigSrc
-    {
-        Trig_Line0 = 0,
-        Trig_Software = 1,
-        Trig_Unknown
-    };
-    // Maps GenICam TriggerSource to TrigSrc
-    const std::unordered_map<std::string, TrigSrc> trig_src_table_;
 
     void query_exposure_time_capabilities_(CameraPropertyMetadata* meta) const;
     void query_binning_capabilities_(CameraPropertyMetadata* meta) const;
@@ -354,24 +357,6 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
       { SampleType_i16, Spinnaker::PixelFormat_Mono16s},
       { SampleType_f32, Spinnaker::PixelFormat_Mono32f},
   }
-  ,trig_edge_table_{
-      { "RisingEdge", TriggerEdge_Rising },
-      { "FallingEdge", TriggerEdge_Falling },
-      { "AnyEdge", TriggerEdge_AnyEdge },
-      { "LevelHigh", TriggerEdge_LevelHigh },
-      { "LevelLow", TriggerEdge_LevelLow },
-  }
-  ,trig_edge_inv_table_{
-      { TriggerEdge_Rising, "RisingEdge"},
-      { TriggerEdge_Falling, "FallingEdge"},
-      { TriggerEdge_AnyEdge, "AnyEdge"},
-      { TriggerEdge_LevelHigh, "LevelHigh"},
-      { TriggerEdge_LevelLow, "LevelLow"},
-  }
-  , trig_src_table_{
-      { "Line0", Trig_Line0},
-      { "Software", Trig_Software},
-  }
   , frame_id_(0)
 {
     CHECK(camera->IsValid());
@@ -530,6 +515,69 @@ SpinnakerCamera::query_pixel_type_capabilities_(
 void
 SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 {
+    // Hard-coding triggers based on inspection of blackfly camera properties in
+    // SpinView. ExposureActive can be selected using the Trigger Selector in
+    // SpinView, but Spinnaker does not have a corresponding enum value in
+    // TriggerSelectorEnums, so do not enable it as an input trigger.
+    meta->triggers = {
+        .frame_start = { .input = 1, .output = 0 },
+        .exposure = { .input = 0, .output = 2 },
+    };
+    // Software is available as a trigger, but not as a digital i/o line.
+    meta->digital_lines = {
+        .line_count=2,
+        .names = {
+          "Line0",
+          "Line1",
+        },
+    };
+}
+
+uint8_t
+trigger_source_to_line_number(
+  const Spinnaker::TriggerSourceEnums trigger_source)
+{
+    switch (trigger_source) {
+        case Spinnaker::TriggerSource_Line0:
+            return 0;
+        case Spinnaker::TriggerSource_Line1:
+            return 1;
+        case Spinnaker::TriggerSource_Line2:
+            return 2;
+        case Spinnaker::TriggerSource_Line3:
+            return 3;
+        case Spinnaker::TriggerSource_Software:
+            return 4;
+        default:
+            // Deliberate fall through to final return.
+            break;
+    }
+    // TODO: what is the default/unknown line number.
+    // Does it matter?
+    return 4;
+}
+
+Spinnaker::TriggerSourceEnums
+line_number_to_trigger_source(const uint8_t line_number)
+{
+    switch (line_number) {
+        case 0:
+            return Spinnaker::TriggerSource_Line0;
+        case 1:
+            return Spinnaker::TriggerSource_Line1;
+        case 2:
+            return Spinnaker::TriggerSource_Line2;
+        case 3:
+            return Spinnaker::TriggerSource_Line3;
+        case 4:
+            // TODO: something better than this?
+            return Spinnaker::TriggerSource_Software;
+        default:
+            // Deliberate fall through to final return.
+            break;
+    }
+    // TODO: something better than this.
+    return Spinnaker::TriggerSource_Software;
 }
 
 void
@@ -549,6 +597,45 @@ SpinnakerCamera::get(struct CameraProperties* properties)
           .y = (uint32_t)camera_->Height.GetValue(),
         },
     };
+
+    // Only reads frame_start input trigger if it currently configured.
+    if (IsReadable(camera_->TriggerSelector)) {
+        const Spinnaker::TriggerSelectorEnums trigger_type =
+          camera_->TriggerSelector();
+        if (trigger_type == Spinnaker::TriggerSelector_FrameStart) {
+            auto& trigger = properties->input_triggers.frame_start;
+            trigger.kind = Signal_Input;
+            trigger.enable =
+              camera_->TriggerMode() == Spinnaker::TriggerMode_On;
+            trigger.line =
+              trigger_source_to_line_number(camera_->TriggerSource());
+            trigger.edge = at_or(trig_edge_table,
+                                 camera_->TriggerActivation(),
+                                 TriggerEdge_Unknown);
+        }
+    }
+
+    // Only reads exposure output trigger if it currently configured.
+    if (IsReadable(camera_->TriggerSelector)) {
+        const Spinnaker::LineSelectorEnums trigger_type =
+          camera_->LineSelector();
+        if (trigger_type == Spinnaker::LineSelector_Line1) {
+            const Spinnaker::LineSourceEnums line_source =
+              camera_->LineSource();
+            if (line_source == Spinnaker::LineSource_ExposureActive) {
+                auto& trigger = properties->output_triggers.exposure;
+                trigger.kind = Signal_Output;
+                trigger.enable =
+                  camera_->TriggerMode() == Spinnaker::TriggerMode_On;
+                trigger.line =
+                  trigger_source_to_line_number(camera_->TriggerSource());
+                trigger.edge = at_or(trig_edge_table,
+                                     camera_->TriggerActivation(),
+                                     TriggerEdge_Unknown);
+            }
+        }
+    }
+
     last_known_settings_ = *properties;
 }
 
@@ -648,6 +735,31 @@ SpinnakerCamera::maybe_set_shape(
 void
 SpinnakerCamera::maybe_set_trigger(Trigger& target, const Trigger& last)
 {
+    // Assumes target is frame_start.
+    if (IsReadable(camera_->TriggerSelector) &&
+        IsWritable(camera_->TriggerSelector)) {
+        // Always disable trigger before any other configuration.
+        camera_->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
+
+        // TODO: revert to currently selected trigger?
+        camera_->TriggerSelector.SetValue(
+          Spinnaker::TriggerSelector_FrameStart);
+
+        const Spinnaker::TriggerSourceEnums trigger_source =
+          line_number_to_trigger_source(target.line);
+        camera_->TriggerSource.SetValue(trigger_source);
+
+        // TODO: better default behavior.
+        const Spinnaker::TriggerActivationEnums trigger_activation = at_or(
+          trig_edge_inv_table, target.edge, Spinnaker::NUM_TRIGGERACTIVATION);
+        CHECK(trigger_activation != Spinnaker::NUM_TRIGGERACTIVATION);
+        camera_->TriggerActivation.SetValue(trigger_activation);
+
+        // Maybe enable last.
+        camera_->TriggerMode.SetValue(target.enable
+                                        ? Spinnaker::TriggerMode_On
+                                        : Spinnaker::TriggerMode_Off);
+    }
 }
 
 void

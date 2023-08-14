@@ -18,6 +18,7 @@ else()
                 one-video-stream
                 repeat-start
                 repeat-start-no-stop
+                configure-triggering
         )
 
         foreach(name ${tests})
