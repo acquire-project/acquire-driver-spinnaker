@@ -668,8 +668,8 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
         },
     };
     meta->triggers = {
-        .frame_start = { .input = 0b0101, .output = 0 },
         .exposure = { .input = 0, .output = 0b0010 },
+        .frame_start = { .input = 0b0101, .output = 0 },
     };
 }
 
