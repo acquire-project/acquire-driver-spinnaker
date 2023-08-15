@@ -19,6 +19,7 @@ else()
                 repeat-start
                 repeat-start-no-stop
                 configure-triggering
+                abort-while-waiting-for-trigger
         )
 
         foreach(name ${tests})

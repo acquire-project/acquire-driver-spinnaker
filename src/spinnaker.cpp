@@ -66,6 +66,7 @@ struct SpinnakerCamera final : private Camera
 
   private:
     Spinnaker::CameraPtr camera_;
+    bool started_;
     struct CameraProperties last_known_settings_;
     struct CameraPropertyMetadata last_known_capabilities_;
     uint64_t frame_id_;
@@ -336,6 +337,7 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
             .get_frame = ::spinnakercam_get_frame,
   }
   , camera_(camera)
+  , started_(false)
   , last_known_settings_{}
   , px_type_table_ {
         { Spinnaker::PixelFormat_Mono8, SampleType_u8 },
@@ -515,21 +517,23 @@ SpinnakerCamera::query_pixel_type_capabilities_(
 void
 SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 {
+    // Arbitrarily assign the software trigger to acquire's 3rd digital line.
+    meta->digital_lines = {
+        .line_count=3,
+        .names = {
+          "Line0",
+          "Line1",
+          "Software",
+        },
+    };
+
     // Hard-coding triggers based on inspection of blackfly camera properties in
     // SpinView. ExposureActive can be selected using the Trigger Selector in
     // SpinView, but Spinnaker does not have a corresponding enum value in
     // TriggerSelectorEnums, so do not enable it as an input trigger.
     meta->triggers = {
-        .frame_start = { .input = 1, .output = 0 },
-        .exposure = { .input = 0, .output = 2 },
-    };
-    // Software is available as a trigger, but not as a digital i/o line.
-    meta->digital_lines = {
-        .line_count=2,
-        .names = {
-          "Line0",
-          "Line1",
-        },
+        .frame_start = { .input = 0b0101, .output = 0 },
+        .exposure = { .input = 0, .output = 0b0010 },
     };
 }
 
@@ -542,19 +546,12 @@ trigger_source_to_line_number(
             return 0;
         case Spinnaker::TriggerSource_Line1:
             return 1;
-        case Spinnaker::TriggerSource_Line2:
-            return 2;
-        case Spinnaker::TriggerSource_Line3:
-            return 3;
         case Spinnaker::TriggerSource_Software:
-            return 4;
-        default:
-            // Deliberate fall through to final return.
-            break;
+            return 2;
+        default:;
     }
-    // TODO: what is the default/unknown line number.
-    // Does it matter?
-    return 4;
+    // TODO: error here?
+    return 3;
 }
 
 Spinnaker::TriggerSourceEnums
@@ -566,17 +563,10 @@ line_number_to_trigger_source(const uint8_t line_number)
         case 1:
             return Spinnaker::TriggerSource_Line1;
         case 2:
-            return Spinnaker::TriggerSource_Line2;
-        case 3:
-            return Spinnaker::TriggerSource_Line3;
-        case 4:
-            // TODO: something better than this?
             return Spinnaker::TriggerSource_Software;
-        default:
-            // Deliberate fall through to final return.
-            break;
+        default:;
     }
-    // TODO: something better than this.
+    // TODO: error here?
     return Spinnaker::TriggerSource_Software;
 }
 
@@ -747,12 +737,14 @@ SpinnakerCamera::maybe_set_trigger(Trigger& target, const Trigger& last)
 
         const Spinnaker::TriggerSourceEnums trigger_source =
           line_number_to_trigger_source(target.line);
+        LOG("TriggerSource = %d", trigger_source);
         camera_->TriggerSource.SetValue(trigger_source);
 
         // TODO: better default behavior.
         const Spinnaker::TriggerActivationEnums trigger_activation = at_or(
           trig_edge_inv_table, target.edge, Spinnaker::NUM_TRIGGERACTIVATION);
         CHECK(trigger_activation != Spinnaker::NUM_TRIGGERACTIVATION);
+        LOG("TriggerActivation = %d", trigger_activation);
         camera_->TriggerActivation.SetValue(trigger_activation);
 
         // Maybe enable last.
@@ -765,7 +757,9 @@ SpinnakerCamera::maybe_set_trigger(Trigger& target, const Trigger& last)
 void
 SpinnakerCamera::start()
 {
+    LOG("SpinnakerCamera::start");
     const std::scoped_lock lock(lock_);
+    started_ = true;
     frame_id_ = 0;
 
     // TODO: should we configure continuous acquisition outside of start?
@@ -784,13 +778,17 @@ SpinnakerCamera::start()
 void
 SpinnakerCamera::stop()
 {
+    LOG("SpinnakerCamera::stop: %d", started_);
     const std::scoped_lock lock(lock_);
+    started_ = false;
     // This guards against consecutive calls to stop, which occurs due
     // to SpinnakerCamera's destructor and maybe in other cases too.
-    if (camera_->IsStreaming()) {
+    if (started_) {
         // TODO: should this be AcquisitionAbort instead?
+        // camera_->AcquisitionAbort();
         camera_->EndAcquisition();
     }
+    LOG("SpinnakerCamera::stop: end %d", started_);
 }
 
 void
@@ -821,21 +819,25 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
 void
 SpinnakerCamera::execute_trigger() const
 {
-    // TODO: check if the lock is really needed.
-    const std::scoped_lock lock(lock_);
+    LOG("SpinnakerCamera::execute_trigger");
     camera_->TriggerSoftware();
 }
 
 void
 SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 {
-    // Prevent concurrent execution with stop, so that this does not leak
-    // memory associated with any retrieved frames.
-    const std::scoped_lock lock(lock_);
-
+    LOG("SpinnakerCamera::get_frame: %d", started_);
+    if (!started_) {
+        return;
+    }
     // Adapted from the Acquisition.cpp example distributed with the Spinnaker
     // SDK.
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
+    LOG("SpinnakerCamera::get_frame: got frame");
+
+    // Prevent concurrent execution with stop, so that this does not leak
+    // memory associated with any retrieved frames.
+    const std::scoped_lock lock(lock_);
 
     if (frame->IsIncomplete()) {
         LOGE(
