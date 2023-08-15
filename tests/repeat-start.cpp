@@ -83,6 +83,7 @@ main()
             LOG("Start/Stop cycle took %f ms", clock_toc_ms(&clock));
         }
         acquire_shutdown(runtime);
+        LOG("OK");
         return 0;
     } catch (const std::exception& e) {
         ERR("Exception: %s", e.what());

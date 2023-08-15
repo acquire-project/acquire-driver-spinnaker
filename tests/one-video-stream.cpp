@@ -144,6 +144,7 @@ main()
 
         OK(acquire_stop(runtime));
         OK(acquire_shutdown(runtime));
+        LOG("OK");
         return 0;
     } catch (const std::runtime_error& e) {
         ERR("Runtime error: %s", e.what());

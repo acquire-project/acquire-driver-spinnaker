@@ -84,5 +84,6 @@ main()
     AOK(acquire_abort(runtime));
 
     acquire_shutdown(runtime);
+    LOG("OK");
     return 0;
 }

@@ -63,6 +63,7 @@ main()
         }
         driver->shutdown(driver);
     }
+    LOG("OK");
     lib_close(&lib);
     return 0;
 Error:

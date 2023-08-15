@@ -741,8 +741,8 @@ void
 SpinnakerCamera::stop()
 {
     const std::scoped_lock lock(lock_);
-    // To prevent an effective deadlock between EndAcquisition and GetNextFrame
-    // that is awaiting a trigger.
+    // Disalble the current trigger to prevent an effective deadlock between
+    // EndAcquisition and GetNextFrame that is awaiting a trigger.
     // TODO: consider enabling triggers in start rather than configure because
     // otherwise disabling here creates some inconsistency.
     if (IsReadable(camera_->TriggerMode) && IsWritable(camera_->TriggerMode)) {
@@ -756,6 +756,7 @@ SpinnakerCamera::stop()
 void
 SpinnakerCamera::execute_trigger() const
 {
+    const std::scoped_lock lock(lock_);
     camera_->TriggerSoftware();
 }
 
@@ -763,7 +764,9 @@ void
 SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 {
     // Adapted from the Acquisition.cpp example distributed with the Spinnaker
-    // SDK.
+    // SDK. Cannot acquire the camera lock here because GetNextImage may await
+    // a trigger indefinitely effectively causing a deadlock that is especially
+    // bad for stop since it prevents teardown of the camera.
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
 
     if (frame->IsIncomplete()) {
@@ -798,6 +801,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                   .type = at_or(px_type_table, frame->GetPixelFormat(), SampleType_Unknown),
               },
               .hardware_timestamp = timestamp_ns,
+              // TODO: should frame_id be incremented before GetNextImage?
               .hardware_frame_id = frame_id_++,
         };
     }
