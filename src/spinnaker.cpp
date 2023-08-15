@@ -15,10 +15,6 @@
 #include <cmath>
 #include <cstring>
 
-constexpr size_t NBUFFERS = 16;
-
-#define countof(e) (sizeof(e) / sizeof(*(e)))
-
 #define LOG(...) aq_logger(0, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 #define LOGE(...) aq_logger(1, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 #define EXPECT(e, ...)                                                         \
@@ -31,6 +27,10 @@ constexpr size_t NBUFFERS = 16;
 #define CHECK(e) EXPECT(e, "Expression evaluated as false:\n\t%s", #e)
 
 namespace {
+
+//
+// Utilities
+//
 
 const std::unordered_map<Spinnaker::TriggerActivationEnums, TriggerEdge>
   trig_edge_table{
@@ -50,6 +50,93 @@ const std::unordered_map<TriggerEdge, Spinnaker::TriggerActivationEnums>
       { TriggerEdge_LevelLow, Spinnaker::TriggerActivation_LevelLow },
   };
 
+const std::unordered_map<Spinnaker::PixelFormatEnums, SampleType> px_type_table{
+    { Spinnaker::PixelFormat_Mono8, SampleType_u8 },
+    { Spinnaker::PixelFormat_Mono8s, SampleType_i8 },
+    { Spinnaker::PixelFormat_Mono10, SampleType_u10 },
+    { Spinnaker::PixelFormat_Mono12, SampleType_u12 },
+    { Spinnaker::PixelFormat_Mono14, SampleType_u14 },
+    { Spinnaker::PixelFormat_Mono16, SampleType_u16 },
+    { Spinnaker::PixelFormat_Mono16s, SampleType_i16 },
+    { Spinnaker::PixelFormat_Mono32f, SampleType_f32 },
+};
+
+const std::unordered_map<SampleType, Spinnaker::PixelFormatEnums>
+  px_type_inv_table{
+      { SampleType_u8, Spinnaker::PixelFormat_Mono8 },
+      { SampleType_i8, Spinnaker::PixelFormat_Mono8s },
+      { SampleType_u10, Spinnaker::PixelFormat_Mono10 },
+      { SampleType_u12, Spinnaker::PixelFormat_Mono12 },
+      { SampleType_u14, Spinnaker::PixelFormat_Mono14 },
+      { SampleType_u16, Spinnaker::PixelFormat_Mono16 },
+      { SampleType_i16, Spinnaker::PixelFormat_Mono16s },
+      { SampleType_f32, Spinnaker::PixelFormat_Mono32f },
+  };
+
+template<typename K, typename V>
+V
+at_or(const std::unordered_map<K, V>& table, const K& key, V dflt)
+{
+    const auto it = table.find(key);
+    if (it == std::end(table)) {
+        return dflt;
+    }
+    return it->second;
+}
+
+bool
+is_equal(const Trigger& lhs, const Trigger& rhs)
+{
+    return memcmp(&lhs, &rhs, sizeof(Trigger)) == 0;
+}
+
+template<typename T>
+static T
+clamp(T val, float low, float high)
+{
+    float fval = float(val);
+    return (fval < low)    ? static_cast<T>(low)
+           : (fval > high) ? static_cast<T>(high)
+                           : val;
+}
+
+uint8_t
+trigger_source_to_line_number(
+  const Spinnaker::TriggerSourceEnums trigger_source)
+{
+    switch (trigger_source) {
+        case Spinnaker::TriggerSource_Line0:
+            return 0;
+        case Spinnaker::TriggerSource_Line1:
+            return 1;
+        case Spinnaker::TriggerSource_Software:
+            return 2;
+        default:;
+    }
+    // TODO: error here?
+    return 3;
+}
+
+Spinnaker::TriggerSourceEnums
+line_number_to_trigger_source(const uint8_t line_number)
+{
+    switch (line_number) {
+        case 0:
+            return Spinnaker::TriggerSource_Line0;
+        case 1:
+            return Spinnaker::TriggerSource_Line1;
+        case 2:
+            return Spinnaker::TriggerSource_Software;
+        default:;
+    }
+    // TODO: error here?
+    return Spinnaker::TriggerSource_Software;
+}
+
+//
+// Camera declaration
+//
+
 struct SpinnakerCamera final : private Camera
 {
     explicit SpinnakerCamera(Spinnaker::CameraPtr camera);
@@ -65,17 +152,12 @@ struct SpinnakerCamera final : private Camera
     void get_frame(void* im, size_t* nbytes, struct ImageInfo* info);
 
   private:
+    // Guards access to camera_
+    mutable std::mutex lock_;
     Spinnaker::CameraPtr camera_;
-    bool started_;
+    uint64_t frame_id_;
     struct CameraProperties last_known_settings_;
     struct CameraPropertyMetadata last_known_capabilities_;
-    uint64_t frame_id_;
-    mutable std::mutex lock_;
-
-    const std::unordered_map<Spinnaker::PixelFormatEnums, SampleType>
-      px_type_table_;
-    const std::unordered_map<SampleType, Spinnaker::PixelFormatEnums>
-      px_type_inv_table_;
 
     void query_exposure_time_capabilities_(CameraPropertyMetadata* meta) const;
     void query_binning_capabilities_(CameraPropertyMetadata* meta) const;
@@ -99,29 +181,9 @@ struct SpinnakerCamera final : private Camera
                                                const Trigger& last);
 };
 
-struct SpinnakerDriver final : public Driver
-{
-    SpinnakerDriver(Spinnaker::SystemPtr system);
-
-    uint32_t device_count();
-    void describe(DeviceIdentifier* identifier, uint64_t i);
-    void open(uint64_t device_id, struct Device** out);
-    static void close(struct Device* in);
-
-  private:
-    Spinnaker::SystemPtr system_;
-};
-
-template<typename K, typename V>
-V
-at_or(const std::unordered_map<K, V>& table, const K& key, V dflt)
-{
-    const auto it = table.find(key);
-    if (it == std::end(table)) {
-        return dflt;
-    }
-    return it->second;
-}
+//
+// Non-throwing camera implementation.
+//
 
 enum DeviceStatusCode
 spinnakercam_set(struct Camera* self_, struct CameraProperties* settings)
@@ -253,81 +315,9 @@ spinnakercam_get_frame(struct Camera* self_,
     return Device_Err;
 }
 
-uint32_t
-spinnakercam_device_count(struct Driver* self_)
-{
-    try {
-        CHECK(self_);
-        return ((struct SpinnakerDriver*)self_)->device_count();
-    } catch (const std::exception& exc) {
-        LOGE("Exception: %s\n", exc.what());
-    } catch (...) {
-        LOGE("Exception: (unknown)");
-    }
-    return 0;
-}
-
-enum DeviceStatusCode
-spinnakercam_describe(const struct Driver* self_,
-                      struct DeviceIdentifier* identifier,
-                      uint64_t i)
-{
-    try {
-        CHECK(self_);
-        ((struct SpinnakerDriver*)self_)->describe(identifier, i);
-        return Device_Ok;
-    } catch (const std::exception& exc) {
-        LOGE("Exception: %s\n", exc.what());
-    } catch (...) {
-        LOGE("Exception: (unknown)");
-    }
-    return Device_Err;
-}
-
-enum DeviceStatusCode
-spinnakercam_open(struct Driver* self_, uint64_t device_id, struct Device** out)
-{
-    try {
-        CHECK(self_);
-        ((struct SpinnakerDriver*)self_)->open(device_id, out);
-        return Device_Ok;
-    } catch (const std::exception& exc) {
-        LOGE("Exception: %s\n", exc.what());
-    } catch (...) {
-        LOGE("Exception: (unknown)");
-    }
-    return Device_Err;
-}
-
-enum DeviceStatusCode
-spinnakercam_close(struct Driver* self_, struct Device* in)
-{
-    try {
-        CHECK(self_);
-        ((struct SpinnakerDriver*)self_)->close(in);
-        return Device_Ok;
-    } catch (const std::exception& exc) {
-        LOGE("Exception: %s\n", exc.what());
-    } catch (...) {
-        LOGE("Exception: (unknown)");
-    }
-    return Device_Err;
-}
-
-enum DeviceStatusCode
-spinnakercam_shutdown_(struct Driver* self_)
-{
-    try {
-        CHECK(self_);
-        delete (SpinnakerDriver*)self_;
-        return Device_Ok;
-    } catch (const std::exception& exc) {
-        LOGE("Exception: %s\n", exc.what());
-    } catch (...) {
-        LOGE("Exception: (unknown)");
-    }
-    return Device_Err;
-}
+//
+// Camera implementation
+//
 
 SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   : Camera{ .set = ::spinnakercam_set,
@@ -340,28 +330,7 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
             .get_frame = ::spinnakercam_get_frame,
   }
   , camera_(camera)
-  , started_(false)
   , last_known_settings_{}
-  , px_type_table_ {
-        { Spinnaker::PixelFormat_Mono8, SampleType_u8 },
-        { Spinnaker::PixelFormat_Mono8s, SampleType_i8 },
-        { Spinnaker::PixelFormat_Mono10, SampleType_u10 },
-        { Spinnaker::PixelFormat_Mono12, SampleType_u12 },
-        { Spinnaker::PixelFormat_Mono14, SampleType_u14 },
-        { Spinnaker::PixelFormat_Mono16, SampleType_u16 },
-        { Spinnaker::PixelFormat_Mono16s, SampleType_i16 },
-        { Spinnaker::PixelFormat_Mono32f, SampleType_f32 },
-    }
-  , px_type_inv_table_ {
-      { SampleType_u8 , Spinnaker::PixelFormat_Mono8},
-      { SampleType_i8 , Spinnaker::PixelFormat_Mono8s},
-      { SampleType_u10, Spinnaker::PixelFormat_Mono10},
-      { SampleType_u12, Spinnaker::PixelFormat_Mono12},
-      { SampleType_u14, Spinnaker::PixelFormat_Mono14},
-      { SampleType_u16, Spinnaker::PixelFormat_Mono16},
-      { SampleType_i16, Spinnaker::PixelFormat_Mono16s},
-      { SampleType_f32, Spinnaker::PixelFormat_Mono32f},
-  }
   , frame_id_(0)
 {
     CHECK(camera->IsValid());
@@ -415,21 +384,198 @@ SpinnakerCamera::set(struct CameraProperties* properties)
         last_known_settings_.output_triggers.exposure);
 }
 
-template<typename T>
-static T
-clamp(T val, float low, float high)
-{
-    float fval = float(val);
-    return (fval < low)    ? static_cast<T>(low)
-           : (fval > high) ? static_cast<T>(high)
-                           : val;
-}
-
 float
 SpinnakerCamera::maybe_set_exposure_time_us_(float target_us,
                                              float last_value_us)
 {
     return last_value_us;
+}
+
+uint8_t
+SpinnakerCamera::maybe_set_binning(uint8_t target, uint8_t last_value)
+{
+    if (target != last_value) {
+        target = clamp(target,
+                       last_known_capabilities_.binning.low,
+                       last_known_capabilities_.binning.high);
+        if (last_known_capabilities_.binning.writable) {
+            camera_->BinningHorizontal.SetValue(target);
+            camera_->BinningVertical.SetValue(target);
+        }
+        return target;
+    }
+    return last_value;
+}
+
+SampleType
+SpinnakerCamera::maybe_set_px_type(SampleType target, SampleType last_known)
+{
+    CHECK(target < SampleTypeCount);
+    if (target == last_known) {
+        return last_known;
+    }
+    const Spinnaker::PixelFormatEnums format = px_type_inv_table.at(target);
+    if (IsReadable(camera_->PixelFormat) && IsWritable(camera_->PixelFormat)) {
+        Spinnaker::GenApi::IEnumEntry* entry =
+          camera_->PixelFormat.GetEntry((int)format);
+        EXPECT(IsReadable(entry),
+               "Sample type %d recognized as pixel format %d, but not "
+               "supported by this camera.",
+               target,
+               format);
+        camera_->PixelFormat.SetIntValue(entry->GetValue());
+    }
+    return target;
+}
+
+CameraProperties::camera_properties_offset_s
+SpinnakerCamera::maybe_set_offset(
+  CameraProperties::camera_properties_offset_s target,
+  CameraProperties::camera_properties_offset_s last)
+{
+    if (target.x != last.x) {
+        target.x = clamp(target.x,
+                         last_known_capabilities_.offset.x.low,
+                         last_known_capabilities_.offset.x.high);
+        if (last_known_capabilities_.offset.x.writable) {
+            camera_->OffsetX = target.x;
+        }
+        last.x = target.x;
+    }
+    if (target.y != last.y) {
+        target.y = clamp(target.y,
+                         last_known_capabilities_.offset.y.low,
+                         last_known_capabilities_.offset.y.high);
+        if (last_known_capabilities_.offset.y.writable) {
+            camera_->OffsetY = target.y;
+        }
+        last.y = target.y;
+    }
+    return last;
+}
+
+CameraProperties::camera_properties_shape_s
+SpinnakerCamera::maybe_set_shape(
+  CameraProperties::camera_properties_shape_s target,
+  CameraProperties::camera_properties_shape_s last)
+{
+    if (target.x != last.x) {
+        target.x = clamp(target.x,
+                         last_known_capabilities_.shape.x.low,
+                         last_known_capabilities_.shape.x.high);
+        if (last_known_capabilities_.shape.x.writable) {
+            camera_->Width = target.x;
+        }
+        last.x = target.x;
+    }
+    if (target.y != last.y) {
+        target.y = clamp(target.y,
+                         last_known_capabilities_.shape.y.low,
+                         last_known_capabilities_.shape.y.high);
+        if (last_known_capabilities_.shape.y.writable) {
+            camera_->Height = target.y;
+        }
+        last.y = target.y;
+    }
+    return last;
+}
+
+Trigger&
+SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target,
+                                                     const Trigger& last)
+{
+    if (is_equal(target, last)) {
+        return target;
+    }
+    if (IsReadable(camera_->TriggerSelector) &&
+        IsWritable(camera_->TriggerSelector)) {
+        // Always disable trigger before any other configuration.
+        camera_->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
+
+        // TODO: revert to currently selected trigger?
+        camera_->TriggerSelector.SetValue(
+          Spinnaker::TriggerSelector_FrameStart);
+
+        const Spinnaker::TriggerSourceEnums trigger_source =
+          line_number_to_trigger_source(target.line);
+        camera_->TriggerSource.SetValue(trigger_source);
+
+        const Spinnaker::TriggerActivationEnums trigger_activation =
+          trig_edge_inv_table.at(target.edge);
+        camera_->TriggerActivation.SetValue(trigger_activation);
+
+        // Maybe enable last.
+        camera_->TriggerMode.SetValue(target.enable
+                                        ? Spinnaker::TriggerMode_On
+                                        : Spinnaker::TriggerMode_Off);
+    }
+    return target;
+}
+
+Trigger&
+SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target,
+                                                   const Trigger& last)
+{
+    if (is_equal(target, last)) {
+        return target;
+    }
+    if (IsReadable(camera_->LineSelector) &&
+        IsWritable(camera_->LineSelector)) {
+        // TODO: revert to currently selected trigger?
+        camera_->LineSelector.SetValue(Spinnaker::LineSelector_Line1);
+        camera_->LineMode.SetValue(Spinnaker::LineMode_Output);
+        camera_->LineSource.SetValue(Spinnaker::LineSource_ExposureActive);
+    }
+    return target;
+}
+
+void
+SpinnakerCamera::get(struct CameraProperties* properties)
+{
+    const std::scoped_lock lock(lock_);
+    *properties = {
+        .exposure_time_us = (float)camera_->ExposureTime.GetValue(),
+        .binning = (uint8_t)camera_->BinningHorizontal.GetValue(),
+        .pixel_type = at_or(px_type_table, camera_->PixelFormat(), SampleType_Unknown),
+        .offset = {
+          .x = (uint32_t)camera_->OffsetX.GetValue(),
+          .y = (uint32_t)camera_->OffsetY.GetValue(),
+        },
+        .shape = {
+          .x = (uint32_t)camera_->Width.GetValue(),
+          .y = (uint32_t)camera_->Height.GetValue(),
+        },
+    };
+
+    // Only reads frame_start input trigger if it currently configured.
+    if (IsReadable(camera_->TriggerSelector)) {
+        if (camera_->TriggerSelector() ==
+            Spinnaker::TriggerSelector_FrameStart) {
+            auto& trigger = properties->input_triggers.frame_start;
+            trigger.kind = Signal_Input;
+            trigger.enable =
+              camera_->TriggerMode() == Spinnaker::TriggerMode_On;
+            trigger.line =
+              trigger_source_to_line_number(camera_->TriggerSource());
+            trigger.edge = at_or(trig_edge_table,
+                                 camera_->TriggerActivation(),
+                                 TriggerEdge_Unknown);
+        }
+    }
+
+    // Only reads exposure output trigger if it currently configured on line 1.
+    if (IsReadable(camera_->LineSelector) && IsReadable(camera_->LineSource)) {
+        if (camera_->LineSelector() == Spinnaker::LineSelector_Line1) {
+            auto& trigger = properties->output_triggers.exposure;
+            trigger.kind = Signal_Output;
+            trigger.enable =
+              camera_->LineSource() == Spinnaker::LineSource_ExposureActive;
+            trigger.line = 1;
+            trigger.edge = TriggerEdge_LevelHigh;
+        }
+    }
+
+    last_known_settings_ = *properties;
 }
 
 void
@@ -521,7 +667,7 @@ SpinnakerCamera::query_pixel_type_capabilities_(
         EXPECT(entry, "Unable to cast to enum entry.");
         const auto format = (Spinnaker::PixelFormatEnums)entry->GetValue();
         const SampleType sample_type =
-          at_or(px_type_table_, format, SampleType_Unknown);
+          at_or(px_type_table, format, SampleType_Unknown);
         meta->supported_pixel_types |= (1ULL << sample_type);
     }
 }
@@ -549,246 +695,35 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
     };
 }
 
-uint8_t
-trigger_source_to_line_number(
-  const Spinnaker::TriggerSourceEnums trigger_source)
-{
-    switch (trigger_source) {
-        case Spinnaker::TriggerSource_Line0:
-            return 0;
-        case Spinnaker::TriggerSource_Line1:
-            return 1;
-        case Spinnaker::TriggerSource_Software:
-            return 2;
-        default:;
-    }
-    // TODO: error here?
-    return 3;
-}
-
-Spinnaker::TriggerSourceEnums
-line_number_to_trigger_source(const uint8_t line_number)
-{
-    switch (line_number) {
-        case 0:
-            return Spinnaker::TriggerSource_Line0;
-        case 1:
-            return Spinnaker::TriggerSource_Line1;
-        case 2:
-            return Spinnaker::TriggerSource_Software;
-        default:;
-    }
-    // TODO: error here?
-    return Spinnaker::TriggerSource_Software;
-}
-
 void
-SpinnakerCamera::get(struct CameraProperties* properties)
+SpinnakerCamera::get_shape(struct ImageShape* shape) const
 {
     const std::scoped_lock lock(lock_);
-    *properties = {
-        .exposure_time_us = (float)camera_->ExposureTime.GetValue(),
-        .binning = (uint8_t)camera_->BinningHorizontal.GetValue(),
-        .pixel_type = at_or(px_type_table_, camera_->PixelFormat(), SampleType_Unknown),
-        .offset = {
-          .x = (uint32_t)camera_->OffsetX.GetValue(),
-          .y = (uint32_t)camera_->OffsetY.GetValue(),
+
+    const uint32_t width = (int32_t)camera_->Width.GetValue();
+    const uint32_t height = (int32_t)camera_->Height.GetValue();
+
+    *shape = {
+        .dims = {
+            .channels = 1,
+            .width = width,
+            .height = height,
+            .planes = 1,
         },
-        .shape = {
-          .x = (uint32_t)camera_->Width.GetValue(),
-          .y = (uint32_t)camera_->Height.GetValue(),
+        .strides = {
+          .channels = 1,
+          .width = 1,
+          .height = width,
+          .planes = width*height,
         },
+        .type = at_or(px_type_table, camera_->PixelFormat(), SampleType_Unknown),
     };
-
-    // Only reads frame_start input trigger if it currently configured.
-    if (IsReadable(camera_->TriggerSelector)) {
-        if (camera_->TriggerSelector() ==
-            Spinnaker::TriggerSelector_FrameStart) {
-            auto& trigger = properties->input_triggers.frame_start;
-            trigger.kind = Signal_Input;
-            trigger.enable =
-              camera_->TriggerMode() == Spinnaker::TriggerMode_On;
-            trigger.line =
-              trigger_source_to_line_number(camera_->TriggerSource());
-            trigger.edge = at_or(trig_edge_table,
-                                 camera_->TriggerActivation(),
-                                 TriggerEdge_Unknown);
-        }
-    }
-
-    // Only reads exposure output trigger if it currently configured on line 1.
-    if (IsReadable(camera_->LineSelector) && IsReadable(camera_->LineSource)) {
-        if (camera_->LineSelector() == Spinnaker::LineSelector_Line1) {
-            auto& trigger = properties->output_triggers.exposure;
-            trigger.kind = Signal_Output;
-            trigger.enable =
-              camera_->LineSource() == Spinnaker::LineSource_ExposureActive;
-            trigger.line = 1;
-            trigger.edge = TriggerEdge_LevelHigh;
-        }
-    }
-
-    last_known_settings_ = *properties;
-}
-
-uint8_t
-SpinnakerCamera::maybe_set_binning(uint8_t target, uint8_t last_value)
-{
-    if (target != last_value) {
-        target = clamp(target,
-                       last_known_capabilities_.binning.low,
-                       last_known_capabilities_.binning.high);
-        if (last_known_capabilities_.binning.writable) {
-            camera_->BinningHorizontal.SetValue(target);
-            camera_->BinningVertical.SetValue(target);
-        }
-        return target;
-    }
-    return last_value;
-}
-
-SampleType
-SpinnakerCamera::maybe_set_px_type(SampleType target, SampleType last_known)
-{
-    CHECK(target < SampleTypeCount);
-    if (target == last_known) {
-        return last_known;
-    }
-    const Spinnaker::PixelFormatEnums format =
-      at_or(px_type_inv_table_, target, Spinnaker::UNKNOWN_PIXELFORMAT);
-    EXPECT(format != Spinnaker::UNKNOWN_PIXELFORMAT,
-           "Sample type %d unrecognized",
-           target);
-    if (IsReadable(camera_->PixelFormat) && IsWritable(camera_->PixelFormat)) {
-        Spinnaker::GenApi::IEnumEntry* entry =
-          camera_->PixelFormat.GetEntry((int)format);
-        EXPECT(IsReadable(entry),
-               "Sample type %d recognized as pixel format %d, but not "
-               "supported by this camera.",
-               target,
-               format);
-        camera_->PixelFormat.SetIntValue(entry->GetValue());
-    }
-    return target;
-}
-
-CameraProperties::camera_properties_offset_s
-SpinnakerCamera::maybe_set_offset(
-  CameraProperties::camera_properties_offset_s target,
-  CameraProperties::camera_properties_offset_s last)
-{
-    if (target.x != last.x) {
-        target.x = clamp(target.x,
-                         last_known_capabilities_.offset.x.low,
-                         last_known_capabilities_.offset.x.high);
-        if (last_known_capabilities_.offset.x.writable) {
-            camera_->OffsetX = target.x;
-        }
-        last.x = target.x;
-    }
-    if (target.y != last.y) {
-        target.y = clamp(target.y,
-                         last_known_capabilities_.offset.y.low,
-                         last_known_capabilities_.offset.y.high);
-        if (last_known_capabilities_.offset.y.writable) {
-            camera_->OffsetY = target.y;
-        }
-        last.y = target.y;
-    }
-    return last;
-}
-
-CameraProperties::camera_properties_shape_s
-SpinnakerCamera::maybe_set_shape(
-  CameraProperties::camera_properties_shape_s target,
-  CameraProperties::camera_properties_shape_s last)
-{
-    if (target.x != last.x) {
-        target.x = clamp(target.x,
-                         last_known_capabilities_.shape.x.low,
-                         last_known_capabilities_.shape.x.high);
-        if (last_known_capabilities_.shape.x.writable) {
-            camera_->Width = target.x;
-        }
-        last.x = target.x;
-    }
-    if (target.y != last.y) {
-        target.y = clamp(target.y,
-                         last_known_capabilities_.shape.y.low,
-                         last_known_capabilities_.shape.y.high);
-        if (last_known_capabilities_.shape.y.writable) {
-            camera_->Height = target.y;
-        }
-        last.y = target.y;
-    }
-    return last;
-}
-
-bool
-is_equal(const Trigger& lhs, const Trigger& rhs)
-{
-    return memcmp(&lhs, &rhs, sizeof(Trigger)) == 0;
-}
-
-Trigger&
-SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target,
-                                                     const Trigger& last)
-{
-    if (is_equal(target, last)) {
-        return target;
-    }
-    if (IsReadable(camera_->TriggerSelector) &&
-        IsWritable(camera_->TriggerSelector)) {
-        // Always disable trigger before any other configuration.
-        camera_->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
-
-        // TODO: revert to currently selected trigger?
-        camera_->TriggerSelector.SetValue(
-          Spinnaker::TriggerSelector_FrameStart);
-
-        const Spinnaker::TriggerSourceEnums trigger_source =
-          line_number_to_trigger_source(target.line);
-        LOG("TriggerSource = %d", trigger_source);
-        camera_->TriggerSource.SetValue(trigger_source);
-
-        // TODO: better default behavior.
-        const Spinnaker::TriggerActivationEnums trigger_activation = at_or(
-          trig_edge_inv_table, target.edge, Spinnaker::NUM_TRIGGERACTIVATION);
-        CHECK(trigger_activation != Spinnaker::NUM_TRIGGERACTIVATION);
-        LOG("TriggerActivation = %d", trigger_activation);
-        camera_->TriggerActivation.SetValue(trigger_activation);
-
-        // Maybe enable last.
-        camera_->TriggerMode.SetValue(target.enable
-                                        ? Spinnaker::TriggerMode_On
-                                        : Spinnaker::TriggerMode_Off);
-    }
-    return target;
-}
-
-Trigger&
-SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target,
-                                                   const Trigger& last)
-{
-    if (is_equal(target, last)) {
-        return target;
-    }
-    if (IsReadable(camera_->LineSelector) &&
-        IsWritable(camera_->LineSelector)) {
-        // TODO: revert to currently selected trigger?
-        camera_->LineSelector.SetValue(Spinnaker::LineSelector_Line1);
-        camera_->LineMode.SetValue(Spinnaker::LineMode_Output);
-        camera_->LineSource.SetValue(Spinnaker::LineSource_ExposureActive);
-    }
-    return target;
 }
 
 void
 SpinnakerCamera::start()
 {
-    LOG("SpinnakerCamera::start");
     const std::scoped_lock lock(lock_);
-    started_ = true;
     frame_id_ = 0;
 
     EXPECT(IsReadable(camera_->AcquisitionMode) &&
@@ -819,34 +754,8 @@ SpinnakerCamera::stop()
 }
 
 void
-SpinnakerCamera::get_shape(struct ImageShape* shape) const
-{
-    const std::scoped_lock lock(lock_);
-
-    const uint32_t width = (int32_t)camera_->Width.GetValue();
-    const uint32_t height = (int32_t)camera_->Height.GetValue();
-
-    *shape = {
-        .dims = {
-            .channels = 1,
-            .width = width,
-            .height = height,
-            .planes = 1,
-        },
-        .strides = {
-          .channels = 1,
-          .width = 1,
-          .height = width,
-          .planes = width*height,
-        },
-        .type = at_or(px_type_table_, camera_->PixelFormat(), SampleType_Unknown),
-    };
-}
-
-void
 SpinnakerCamera::execute_trigger() const
 {
-    LOG("SpinnakerCamera::execute_trigger");
     camera_->TriggerSoftware();
 }
 
@@ -886,7 +795,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                                .height = (int64_t)width,
                                .planes = (int64_t)(width * height),
                   },
-                  .type = at_or(px_type_table_, frame->GetPixelFormat(), SampleType_Unknown),
+                  .type = at_or(px_type_table, frame->GetPixelFormat(), SampleType_Unknown),
               },
               .hardware_timestamp = timestamp_ns,
               .hardware_frame_id = frame_id_++,
@@ -897,7 +806,104 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 }
 
 //
-//      SPINNAKERDRIVER IMPLEMENTATION
+// Driver declaration
+//
+
+struct SpinnakerDriver final : public Driver
+{
+    SpinnakerDriver(Spinnaker::SystemPtr system);
+
+    uint32_t device_count();
+    void describe(DeviceIdentifier* identifier, uint64_t i);
+    void open(uint64_t device_id, struct Device** out);
+    static void close(struct Device* in);
+
+  private:
+    Spinnaker::SystemPtr system_;
+};
+
+//
+// Non-throwing driver implementation
+//
+
+uint32_t
+spinnakercam_device_count(struct Driver* self_)
+{
+    try {
+        CHECK(self_);
+        return ((struct SpinnakerDriver*)self_)->device_count();
+    } catch (const std::exception& exc) {
+        LOGE("Exception: %s\n", exc.what());
+    } catch (...) {
+        LOGE("Exception: (unknown)");
+    }
+    return 0;
+}
+
+enum DeviceStatusCode
+spinnakercam_describe(const struct Driver* self_,
+                      struct DeviceIdentifier* identifier,
+                      uint64_t i)
+{
+    try {
+        CHECK(self_);
+        ((struct SpinnakerDriver*)self_)->describe(identifier, i);
+        return Device_Ok;
+    } catch (const std::exception& exc) {
+        LOGE("Exception: %s\n", exc.what());
+    } catch (...) {
+        LOGE("Exception: (unknown)");
+    }
+    return Device_Err;
+}
+
+enum DeviceStatusCode
+spinnakercam_open(struct Driver* self_, uint64_t device_id, struct Device** out)
+{
+    try {
+        CHECK(self_);
+        ((struct SpinnakerDriver*)self_)->open(device_id, out);
+        return Device_Ok;
+    } catch (const std::exception& exc) {
+        LOGE("Exception: %s\n", exc.what());
+    } catch (...) {
+        LOGE("Exception: (unknown)");
+    }
+    return Device_Err;
+}
+
+enum DeviceStatusCode
+spinnakercam_close(struct Driver* self_, struct Device* in)
+{
+    try {
+        CHECK(self_);
+        ((struct SpinnakerDriver*)self_)->close(in);
+        return Device_Ok;
+    } catch (const std::exception& exc) {
+        LOGE("Exception: %s\n", exc.what());
+    } catch (...) {
+        LOGE("Exception: (unknown)");
+    }
+    return Device_Err;
+}
+
+enum DeviceStatusCode
+spinnakercam_shutdown_(struct Driver* self_)
+{
+    try {
+        CHECK(self_);
+        delete (SpinnakerDriver*)self_;
+        return Device_Ok;
+    } catch (const std::exception& exc) {
+        LOGE("Exception: %s\n", exc.what());
+    } catch (...) {
+        LOGE("Exception: (unknown)");
+    }
+    return Device_Err;
+}
+
+//
+// Driver implementation
 //
 
 SpinnakerDriver::SpinnakerDriver(Spinnaker::SystemPtr system)
