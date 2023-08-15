@@ -93,7 +93,10 @@ struct SpinnakerCamera final : private Camera
     CameraProperties::camera_properties_shape_s maybe_set_shape(
       CameraProperties::camera_properties_shape_s target,
       CameraProperties::camera_properties_shape_s last);
-    void maybe_set_trigger(Trigger& target, const Trigger& last);
+    Trigger& maybe_set_input_trigger_frame_start(Trigger& target,
+                                                 const Trigger& last);
+    Trigger& maybe_set_output_trigger_exposure(Trigger& target,
+                                               const Trigger& last);
 };
 
 struct SpinnakerDriver final : public Driver
@@ -362,12 +365,10 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   , frame_id_(0)
 {
     CHECK(camera->IsValid());
-    // Maybe something more general?
-    if (camera->IsInitialized()) {
-        camera->DeInit();
+    stop();
+    if (!camera->IsInitialized()) {
+        camera->Init();
     }
-    CHECK(!camera->IsInitialized());
-    camera->Init();
     get(&last_known_settings_);
     get_meta(&last_known_capabilities_);
 }
@@ -403,8 +404,15 @@ SpinnakerCamera::set(struct CameraProperties* properties)
     last_known_settings_.shape =
       maybe_set_shape(properties->shape, last_known_settings_.shape);
 
-    maybe_set_trigger(properties->input_triggers.frame_start,
-                      last_known_settings_.input_triggers.frame_start);
+    last_known_settings_.input_triggers.frame_start =
+      maybe_set_input_trigger_frame_start(
+        properties->input_triggers.frame_start,
+        last_known_settings_.input_triggers.frame_start);
+
+    last_known_settings_.output_triggers.exposure =
+      maybe_set_output_trigger_exposure(
+        properties->output_triggers.exposure,
+        last_known_settings_.output_triggers.exposure);
 }
 
 template<typename T>
@@ -523,7 +531,7 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 {
     // Arbitrarily assign the software trigger to acquire's 3rd digital line.
     meta->digital_lines = {
-        .line_count=3,
+        .line_count = 3,
         .names = {
           "Line0",
           "Line1",
@@ -531,9 +539,9 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
         },
     };
 
-    // Hard-coding triggers based on inspection of blackfly camera properties in
-    // SpinView. ExposureActive can be selected using the Trigger Selector in
-    // SpinView, but Spinnaker does not have a corresponding enum value in
+    // These are based on inspection of blackfly camera properties in SpinView.
+    // ExposureActive can be selected using the Trigger Selector in SpinView,
+    // but Spinnaker does not have a corresponding enum value in
     // TriggerSelectorEnums, so do not enable it as an input trigger.
     meta->triggers = {
         .frame_start = { .input = 0b0101, .output = 0 },
@@ -594,9 +602,8 @@ SpinnakerCamera::get(struct CameraProperties* properties)
 
     // Only reads frame_start input trigger if it currently configured.
     if (IsReadable(camera_->TriggerSelector)) {
-        const Spinnaker::TriggerSelectorEnums trigger_type =
-          camera_->TriggerSelector();
-        if (trigger_type == Spinnaker::TriggerSelector_FrameStart) {
+        if (camera_->TriggerSelector() ==
+            Spinnaker::TriggerSelector_FrameStart) {
             auto& trigger = properties->input_triggers.frame_start;
             trigger.kind = Signal_Input;
             trigger.enable =
@@ -609,24 +616,15 @@ SpinnakerCamera::get(struct CameraProperties* properties)
         }
     }
 
-    // Only reads exposure output trigger if it currently configured.
-    if (IsReadable(camera_->TriggerSelector)) {
-        const Spinnaker::LineSelectorEnums trigger_type =
-          camera_->LineSelector();
-        if (trigger_type == Spinnaker::LineSelector_Line1) {
-            const Spinnaker::LineSourceEnums line_source =
-              camera_->LineSource();
-            if (line_source == Spinnaker::LineSource_ExposureActive) {
-                auto& trigger = properties->output_triggers.exposure;
-                trigger.kind = Signal_Output;
-                trigger.enable =
-                  camera_->TriggerMode() == Spinnaker::TriggerMode_On;
-                trigger.line =
-                  trigger_source_to_line_number(camera_->TriggerSource());
-                trigger.edge = at_or(trig_edge_table,
-                                     camera_->TriggerActivation(),
-                                     TriggerEdge_Unknown);
-            }
+    // Only reads exposure output trigger if it currently configured on line 1.
+    if (IsReadable(camera_->LineSelector) && IsReadable(camera_->LineSource)) {
+        if (camera_->LineSelector() == Spinnaker::LineSelector_Line1) {
+            auto& trigger = properties->output_triggers.exposure;
+            trigger.kind = Signal_Output;
+            trigger.enable =
+              camera_->LineSource() == Spinnaker::LineSource_ExposureActive;
+            trigger.line = 1;
+            trigger.edge = TriggerEdge_LevelHigh;
         }
     }
 
@@ -726,10 +724,19 @@ SpinnakerCamera::maybe_set_shape(
     return last;
 }
 
-void
-SpinnakerCamera::maybe_set_trigger(Trigger& target, const Trigger& last)
+bool
+is_equal(const Trigger& lhs, const Trigger& rhs)
 {
-    // Assumes target is frame_start.
+    return memcmp(&lhs, &rhs, sizeof(Trigger)) == 0;
+}
+
+Trigger&
+SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target,
+                                                     const Trigger& last)
+{
+    if (is_equal(target, last)) {
+        return target;
+    }
     if (IsReadable(camera_->TriggerSelector) &&
         IsWritable(camera_->TriggerSelector)) {
         // Always disable trigger before any other configuration.
@@ -756,6 +763,24 @@ SpinnakerCamera::maybe_set_trigger(Trigger& target, const Trigger& last)
                                         ? Spinnaker::TriggerMode_On
                                         : Spinnaker::TriggerMode_Off);
     }
+    return target;
+}
+
+Trigger&
+SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target,
+                                                   const Trigger& last)
+{
+    if (is_equal(target, last)) {
+        return target;
+    }
+    if (IsReadable(camera_->LineSelector) &&
+        IsWritable(camera_->LineSelector)) {
+        // TODO: revert to currently selected trigger?
+        camera_->LineSelector.SetValue(Spinnaker::LineSelector_Line1);
+        camera_->LineMode.SetValue(Spinnaker::LineMode_Output);
+        camera_->LineSource.SetValue(Spinnaker::LineSource_ExposureActive);
+    }
+    return target;
 }
 
 void
@@ -766,8 +791,6 @@ SpinnakerCamera::start()
     started_ = true;
     frame_id_ = 0;
 
-    // TODO: should we configure continuous acquisition outside of start?
-    // How does singleshot/snapshot acquisition work?
     EXPECT(IsReadable(camera_->AcquisitionMode) &&
              IsWritable(camera_->AcquisitionMode),
            "Unable to get and set acquisition mode.");
@@ -782,16 +805,17 @@ SpinnakerCamera::start()
 void
 SpinnakerCamera::stop()
 {
-    LOG("SpinnakerCamera::stop: %d", started_);
     const std::scoped_lock lock(lock_);
-    // This guards against consecutive calls to stop, which occurs due
-    // to SpinnakerCamera's destructor and maybe in other cases too.
-    if (started_) {
-        started_ = false;
+    // To prevent an effective deadlock between EndAcquisition and GetNextFrame
+    // that is awaiting a trigger.
+    // TODO: consider enabling triggers in start rather than configure because
+    // otherwise disabling here creates some inconsistency.
+    if (IsReadable(camera_->TriggerMode) && IsWritable(camera_->TriggerMode)) {
         camera_->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
+    }
+    if (camera_->IsStreaming()) {
         camera_->EndAcquisition();
     }
-    LOG("SpinnakerCamera::stop: end %d", started_);
 }
 
 void
@@ -829,23 +853,9 @@ SpinnakerCamera::execute_trigger() const
 void
 SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 {
-    LOG("SpinnakerCamera::get_frame: %d", started_);
-    if (!started_) {
-        return;
-    }
     // Adapted from the Acquisition.cpp example distributed with the Spinnaker
     // SDK.
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
-    LOG("SpinnakerCamera::get_frame: got frame");
-
-    if (!started_) {
-        frame->Release();
-        return;
-    }
-
-    // Prevent concurrent execution with stop, so that this does not leak
-    // memory associated with any retrieved frames.
-    const std::scoped_lock lock(lock_);
 
     if (frame->IsIncomplete()) {
         LOGE(
