@@ -32,6 +32,17 @@ namespace {
 // Utilities
 //
 
+template<typename K, typename V>
+std::unordered_map<V, K>
+invert_map(const std::unordered_map<K, V>& map)
+{
+    std::unordered_map<V, K> inverse;
+    for (const auto& [k, v] : map) {
+        inverse[v] = k;
+    }
+    return inverse;
+}
+
 const std::unordered_map<Spinnaker::TriggerActivationEnums, TriggerEdge>
   trig_edge_table{
       { Spinnaker::TriggerActivation_RisingEdge, TriggerEdge_Rising },
@@ -42,36 +53,41 @@ const std::unordered_map<Spinnaker::TriggerActivationEnums, TriggerEdge>
   };
 
 const std::unordered_map<TriggerEdge, Spinnaker::TriggerActivationEnums>
-  trig_edge_inv_table{
-      { TriggerEdge_Rising, Spinnaker::TriggerActivation_RisingEdge },
-      { TriggerEdge_Falling, Spinnaker::TriggerActivation_FallingEdge },
-      { TriggerEdge_AnyEdge, Spinnaker::TriggerActivation_AnyEdge },
-      { TriggerEdge_LevelHigh, Spinnaker::TriggerActivation_LevelHigh },
-      { TriggerEdge_LevelLow, Spinnaker::TriggerActivation_LevelLow },
-  };
+  trig_edge_inv_table = invert_map(trig_edge_table);
 
-const std::unordered_map<Spinnaker::PixelFormatEnums, SampleType> px_type_table{
-    { Spinnaker::PixelFormat_Mono8, SampleType_u8 },
-    { Spinnaker::PixelFormat_Mono8s, SampleType_i8 },
-    { Spinnaker::PixelFormat_Mono10, SampleType_u10 },
-    { Spinnaker::PixelFormat_Mono12, SampleType_u12 },
-    { Spinnaker::PixelFormat_Mono14, SampleType_u14 },
-    { Spinnaker::PixelFormat_Mono16, SampleType_u16 },
-    { Spinnaker::PixelFormat_Mono16s, SampleType_i16 },
-    { Spinnaker::PixelFormat_Mono32f, SampleType_f32 },
-};
+const std::unordered_map<Spinnaker::PixelFormatEnums, SampleType>
+  sample_type_table{
+      { Spinnaker::PixelFormat_Mono8, SampleType_u8 },
+      { Spinnaker::PixelFormat_Mono8s, SampleType_i8 },
+      { Spinnaker::PixelFormat_Mono10, SampleType_u10 },
+      { Spinnaker::PixelFormat_Mono12, SampleType_u12 },
+      { Spinnaker::PixelFormat_Mono14, SampleType_u14 },
+      { Spinnaker::PixelFormat_Mono16, SampleType_u16 },
+      { Spinnaker::PixelFormat_Mono16s, SampleType_i16 },
+      { Spinnaker::PixelFormat_Mono32f, SampleType_f32 },
+  };
 
 const std::unordered_map<SampleType, Spinnaker::PixelFormatEnums>
-  px_type_inv_table{
-      { SampleType_u8, Spinnaker::PixelFormat_Mono8 },
-      { SampleType_i8, Spinnaker::PixelFormat_Mono8s },
-      { SampleType_u10, Spinnaker::PixelFormat_Mono10 },
-      { SampleType_u12, Spinnaker::PixelFormat_Mono12 },
-      { SampleType_u14, Spinnaker::PixelFormat_Mono14 },
-      { SampleType_u16, Spinnaker::PixelFormat_Mono16 },
-      { SampleType_i16, Spinnaker::PixelFormat_Mono16s },
-      { SampleType_f32, Spinnaker::PixelFormat_Mono32f },
+  sample_type_inv_table = invert_map(sample_type_table);
+
+// Arbitrarily defines the software line to be acquire's digital line number 2.
+enum TriggerLine
+{
+    TriggerLine_Line0 = 0,
+    TriggerLine_Line1 = 1,
+    TriggerLine_Software = 2,
+    TriggerLine_Unknown = 3
+};
+
+const std::unordered_map<Spinnaker::TriggerSourceEnums, TriggerLine>
+  trig_line_table{
+      { Spinnaker::TriggerSource_Line0, TriggerLine_Line0 },
+      { Spinnaker::TriggerSource_Line1, TriggerLine_Line1 },
+      { Spinnaker::TriggerSource_Software, TriggerLine_Software },
   };
+
+const std::unordered_map<TriggerLine, Spinnaker::TriggerSourceEnums>
+  trig_line_inv_table = invert_map(trig_line_table);
 
 template<typename K, typename V>
 V
@@ -98,39 +114,6 @@ clamp(T val, float low, float high)
     return (fval < low)    ? static_cast<T>(low)
            : (fval > high) ? static_cast<T>(high)
                            : val;
-}
-
-uint8_t
-trigger_source_to_line_number(
-  const Spinnaker::TriggerSourceEnums trigger_source)
-{
-    switch (trigger_source) {
-        case Spinnaker::TriggerSource_Line0:
-            return 0;
-        case Spinnaker::TriggerSource_Line1:
-            return 1;
-        case Spinnaker::TriggerSource_Software:
-            return 2;
-        default:;
-    }
-    // TODO: error here?
-    return 3;
-}
-
-Spinnaker::TriggerSourceEnums
-line_number_to_trigger_source(const uint8_t line_number)
-{
-    switch (line_number) {
-        case 0:
-            return Spinnaker::TriggerSource_Line0;
-        case 1:
-            return Spinnaker::TriggerSource_Line1;
-        case 2:
-            return Spinnaker::TriggerSource_Software;
-        default:;
-    }
-    // TODO: error here?
-    return Spinnaker::TriggerSource_Software;
 }
 
 //
@@ -168,7 +151,7 @@ struct SpinnakerCamera final : private Camera
 
     float maybe_set_exposure_time_us_(float target_us, float last_value_us);
     uint8_t maybe_set_binning(uint8_t target, uint8_t last_value);
-    SampleType maybe_set_px_type(SampleType target, SampleType last_known);
+    SampleType maybe_set_sample_type(SampleType target, SampleType last_known);
     CameraProperties::camera_properties_offset_s maybe_set_offset(
       CameraProperties::camera_properties_offset_s target,
       CameraProperties::camera_properties_offset_s last);
@@ -364,7 +347,7 @@ SpinnakerCamera::set(struct CameraProperties* properties)
     last_known_settings_.binning =
       maybe_set_binning(properties->binning, last_known_settings_.binning);
 
-    last_known_settings_.pixel_type = maybe_set_px_type(
+    last_known_settings_.pixel_type = maybe_set_sample_type(
       properties->pixel_type, last_known_settings_.pixel_type);
 
     last_known_settings_.offset =
@@ -408,13 +391,13 @@ SpinnakerCamera::maybe_set_binning(uint8_t target, uint8_t last_value)
 }
 
 SampleType
-SpinnakerCamera::maybe_set_px_type(SampleType target, SampleType last_known)
+SpinnakerCamera::maybe_set_sample_type(SampleType target, SampleType last_known)
 {
     CHECK(target < SampleTypeCount);
     if (target == last_known) {
         return last_known;
     }
-    const Spinnaker::PixelFormatEnums format = px_type_inv_table.at(target);
+    const Spinnaker::PixelFormatEnums format = sample_type_inv_table.at(target);
     if (IsReadable(camera_->PixelFormat) && IsWritable(camera_->PixelFormat)) {
         Spinnaker::GenApi::IEnumEntry* entry =
           camera_->PixelFormat.GetEntry((int)format);
@@ -492,19 +475,17 @@ SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target,
         // Always disable trigger before any other configuration.
         camera_->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
 
-        // TODO: revert to currently selected trigger?
         camera_->TriggerSelector.SetValue(
           Spinnaker::TriggerSelector_FrameStart);
 
         const Spinnaker::TriggerSourceEnums trigger_source =
-          line_number_to_trigger_source(target.line);
+          trig_line_inv_table.at((TriggerLine)target.line);
         camera_->TriggerSource.SetValue(trigger_source);
 
         const Spinnaker::TriggerActivationEnums trigger_activation =
           trig_edge_inv_table.at(target.edge);
         camera_->TriggerActivation.SetValue(trigger_activation);
 
-        // Maybe enable last.
         camera_->TriggerMode.SetValue(target.enable
                                         ? Spinnaker::TriggerMode_On
                                         : Spinnaker::TriggerMode_Off);
@@ -521,7 +502,6 @@ SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target,
     }
     if (IsReadable(camera_->LineSelector) &&
         IsWritable(camera_->LineSelector)) {
-        // TODO: revert to currently selected trigger?
         camera_->LineSelector.SetValue(Spinnaker::LineSelector_Line1);
         camera_->LineMode.SetValue(Spinnaker::LineMode_Output);
         camera_->LineSource.SetValue(Spinnaker::LineSource_ExposureActive);
@@ -536,7 +516,7 @@ SpinnakerCamera::get(struct CameraProperties* properties)
     *properties = {
         .exposure_time_us = (float)camera_->ExposureTime.GetValue(),
         .binning = (uint8_t)camera_->BinningHorizontal.GetValue(),
-        .pixel_type = at_or(px_type_table, camera_->PixelFormat(), SampleType_Unknown),
+        .pixel_type = at_or(sample_type_table, camera_->PixelFormat(), SampleType_Unknown),
         .offset = {
           .x = (uint32_t)camera_->OffsetX.GetValue(),
           .y = (uint32_t)camera_->OffsetY.GetValue(),
@@ -555,8 +535,8 @@ SpinnakerCamera::get(struct CameraProperties* properties)
             trigger.kind = Signal_Input;
             trigger.enable =
               camera_->TriggerMode() == Spinnaker::TriggerMode_On;
-            trigger.line =
-              trigger_source_to_line_number(camera_->TriggerSource());
+            trigger.line = at_or(
+              trig_line_table, camera_->TriggerSource(), TriggerLine_Unknown);
             trigger.edge = at_or(trig_edge_table,
                                  camera_->TriggerActivation(),
                                  TriggerEdge_Unknown);
@@ -607,7 +587,7 @@ SpinnakerCamera::query_exposure_time_capabilities_(
 void
 SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
 {
-    // TODO: Spinnaker supports independent horizontal and vertical binning.
+    // Spinnaker supports independent horizontal and vertical binning.
     // Assume horizontal is representative for now.
     meta->binning = {
         .writable = IsWritable(camera_->BinningHorizontal),
@@ -667,7 +647,7 @@ SpinnakerCamera::query_pixel_type_capabilities_(
         EXPECT(entry, "Unable to cast to enum entry.");
         const auto format = (Spinnaker::PixelFormatEnums)entry->GetValue();
         const SampleType sample_type =
-          at_or(px_type_table, format, SampleType_Unknown);
+          at_or(sample_type_table, format, SampleType_Unknown);
         meta->supported_pixel_types |= (1ULL << sample_type);
     }
 }
@@ -675,7 +655,10 @@ SpinnakerCamera::query_pixel_type_capabilities_(
 void
 SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 {
-    // Arbitrarily assign the software trigger to acquire's 3rd digital line.
+    // These are based on inspection of blackfly camera properties in SpinView.
+    // ExposureActive can be selected using the Trigger Selector in SpinView,
+    // but Spinnaker does not have a corresponding enum value in
+    // TriggerSelectorEnums, so do not enable it as an input trigger.
     meta->digital_lines = {
         .line_count = 3,
         .names = {
@@ -684,11 +667,6 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
           "Software",
         },
     };
-
-    // These are based on inspection of blackfly camera properties in SpinView.
-    // ExposureActive can be selected using the Trigger Selector in SpinView,
-    // but Spinnaker does not have a corresponding enum value in
-    // TriggerSelectorEnums, so do not enable it as an input trigger.
     meta->triggers = {
         .frame_start = { .input = 0b0101, .output = 0 },
         .exposure = { .input = 0, .output = 0b0010 },
@@ -716,7 +694,7 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
           .height = width,
           .planes = width*height,
         },
-        .type = at_or(px_type_table, camera_->PixelFormat(), SampleType_Unknown),
+        .type = at_or(sample_type_table, camera_->PixelFormat(), SampleType_Unknown),
     };
 }
 
@@ -741,7 +719,7 @@ void
 SpinnakerCamera::stop()
 {
     const std::scoped_lock lock(lock_);
-    // Disalble the current trigger to prevent an effective deadlock between
+    // Disable the current trigger to prevent an effective deadlock between
     // EndAcquisition and GetNextFrame that is awaiting a trigger.
     // TODO: consider enabling triggers in start rather than configure because
     // otherwise disabling here creates some inconsistency.
@@ -798,7 +776,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                                .height = (int64_t)width,
                                .planes = (int64_t)(width * height),
                   },
-                  .type = at_or(px_type_table, frame->GetPixelFormat(), SampleType_Unknown),
+                  .type = at_or(sample_type_table, frame->GetPixelFormat(), SampleType_Unknown),
               },
               .hardware_timestamp = timestamp_ns,
               // TODO: should frame_id be incremented before GetNextImage?
