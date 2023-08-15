@@ -362,6 +362,10 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   , frame_id_(0)
 {
     CHECK(camera->IsValid());
+    // Maybe something more general?
+    if (camera->IsInitialized()) {
+        camera->DeInit();
+    }
     CHECK(!camera->IsInitialized());
     camera->Init();
     get(&last_known_settings_);
@@ -780,12 +784,11 @@ SpinnakerCamera::stop()
 {
     LOG("SpinnakerCamera::stop: %d", started_);
     const std::scoped_lock lock(lock_);
-    started_ = false;
     // This guards against consecutive calls to stop, which occurs due
     // to SpinnakerCamera's destructor and maybe in other cases too.
     if (started_) {
-        // TODO: should this be AcquisitionAbort instead?
-        // camera_->AcquisitionAbort();
+        started_ = false;
+        camera_->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
         camera_->EndAcquisition();
     }
     LOG("SpinnakerCamera::stop: end %d", started_);
@@ -834,6 +837,11 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     // SDK.
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
     LOG("SpinnakerCamera::get_frame: got frame");
+
+    if (!started_) {
+        frame->Release();
+        return;
+    }
 
     // Prevent concurrent execution with stop, so that this does not leak
     // memory associated with any retrieved frames.
