@@ -398,8 +398,10 @@ SpinnakerCamera::~SpinnakerCamera()
         stop();
         const std::scoped_lock lock(lock_);
         camera_->DeInit();
+    } catch (const std::exception& exc) {
+        LOGE("Exception: %s\n", exc.what());
     } catch (...) {
-        ;
+        LOGE("Exception: (unknown)");
     }
 }
 
@@ -990,7 +992,13 @@ SpinnakerDriver::SpinnakerDriver()
 }
 
 SpinnakerDriver::~SpinnakerDriver() {
-    shutdown();
+    try {
+        shutdown();
+    } catch (const std::exception& exc) {
+        LOGE("Exception: %s\n", exc.what());
+    } catch (...) {
+        LOGE("Exception: (unknown)");
+    }
 }
 
 void
