@@ -337,15 +337,8 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   , last_known_settings_{}
   , frame_id_(0)
 {
-    // double check if isvalid is for point or for camera
-    CHECK(camera->IsValid());
-    // this should prob go too
-    stop();
-    // This could happen if the same device is selected on two streams
-    // TODO: strongly consider using EXPECT to check this is not initialized
-    if (!camera->IsInitialized()) {
-        camera->Init();
-    }
+    CHECK(!camera->IsInitialized());
+    camera->Init();
     get(&last_known_settings_);
     get_meta(&last_known_capabilities_);
 }
@@ -792,6 +785,8 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
         };
     }
 
+    // Possibly unneeded, but we manually release as in Acquistion.cpp because
+    // this image was retrieved directly from the camera.
     frame->Release();
 }
 
@@ -802,7 +797,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 // TODO: why is this not private inheritance and assignment like Camera?
 struct SpinnakerDriver final : public Driver
 {
-    SpinnakerDriver();
+    explicit SpinnakerDriver();
     ~SpinnakerDriver();
 
     uint32_t device_count();
@@ -818,8 +813,6 @@ struct SpinnakerDriver final : public Driver
     // spinnaker docs.
     // http://softwareservices.flir.com/Spinnaker/latest/_programmer_guide.html#QuickSpin_API_and_Accessing_Camera_Parameters
     Spinnaker::SystemPtr system_;
-    // True if shutdown has been called at least once on this, false otherwise.
-    bool is_shutdown_;
 };
 
 //
@@ -914,8 +907,7 @@ SpinnakerDriver::SpinnakerDriver()
       .close = ::spinnakercam_close,
       .shutdown = ::spinnakercam_shutdown,
   },
-  system_(Spinnaker::System::GetInstance()),
-  is_shutdown_(false)
+  system_(Spinnaker::System::GetInstance())
 {
 }
 
@@ -985,11 +977,11 @@ SpinnakerDriver::close(struct Device* in)
 void
 SpinnakerDriver::shutdown()
 {
-    // Acquire needs shutdown to be idempotent, but unclear if spinnaker's
-    // System::ReleaseInstance is, so protect against a double release.
-    // TODO: could we use system_.IsValid() instead?
-    if (!is_shutdown_) {
-        is_shutdown_ = true;
+    // Acquire needs shutdown to be idempotent, but System::ReleaseInstance
+    // is not, so protect against a double release.
+    if (system_.IsValid()) {
+        // Possibly unneeded since this is a smart pointer, but this follows
+        // the Spinnaker examples.
         system_->ReleaseInstance();
     }
 }
