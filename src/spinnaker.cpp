@@ -372,8 +372,12 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   , last_known_settings_{}
   , frame_id_(0)
 {
+    // double check if isvalid is for point or for camera
     CHECK(camera->IsValid());
+    // this should prob go too
     stop();
+    // This could happen if the same device is selected on two streams
+    // strongly consider using EXPECT to check this is not initialized
     if (!camera->IsInitialized()) {
         camera->Init();
     }
@@ -421,12 +425,15 @@ SpinnakerCamera::set(struct CameraProperties* properties)
       maybe_set_output_trigger_exposure(
         properties->output_triggers.exposure,
         last_known_settings_.output_triggers.exposure);
+
+    // consider calling get here
 }
 
 float
 SpinnakerCamera::maybe_set_exposure_time_us_(float target_us,
                                              float last_value_us)
 {
+    // TODO
     return last_value_us;
 }
 
@@ -556,6 +563,7 @@ SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target,
     if (is_equal(target, last)) {
         return target;
     }
+    // switch IsReadable to a check
     if (IsReadable(camera_->LineSelector) &&
         IsWritable(camera_->LineSelector)) {
         camera_->LineSelector.SetValue(Spinnaker::LineSelector_Line1);
@@ -570,18 +578,20 @@ SpinnakerCamera::get(struct CameraProperties* properties)
 {
     const std::scoped_lock lock(lock_);
     *properties = {
-        .exposure_time_us = (float)camera_->ExposureTime.GetValue(),
-        .binning = (uint8_t)camera_->BinningHorizontal.GetValue(),
+        .exposure_time_us = (float)camera_->ExposureTime(),
+        .binning = (uint8_t)camera_->BinningHorizontal(),
         .pixel_type = to_sample_type(camera_->PixelFormat()),
         .offset = {
-          .x = (uint32_t)camera_->OffsetX.GetValue(),
-          .y = (uint32_t)camera_->OffsetY.GetValue(),
+          .x = (uint32_t)camera_->OffsetX(),
+          .y = (uint32_t)camera_->OffsetY(),
         },
         .shape = {
-          .x = (uint32_t)camera_->Width.GetValue(),
-          .y = (uint32_t)camera_->Height.GetValue(),
+          .x = (uint32_t)camera_->Width(),
+          .y = (uint32_t)camera_->Height(),
         },
     };
+
+    // at least log when something cannot be populated
 
     // Only reads frame_start input trigger if it currently configured.
     if (IsReadable(camera_->TriggerSelector) &&
@@ -732,8 +742,8 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
 {
     const std::scoped_lock lock(lock_);
 
-    const uint32_t width = (int32_t)camera_->Width.GetValue();
-    const uint32_t height = (int32_t)camera_->Height.GetValue();
+    const uint32_t width = (int32_t)camera_->Width();
+    const uint32_t height = (int32_t)camera_->Height();
 
     *shape = {
         .dims = {
@@ -801,6 +811,8 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     // bad for stop since it prevents teardown of the camera.
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
 
+    // Consider explaining why we don't acquire the camera mutex here.
+
     if (frame->IsIncomplete()) {
         LOGE(
           "Image incomplete: %s",
@@ -833,7 +845,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                   .type = to_sample_type(frame->GetPixelFormat()),
               },
               .hardware_timestamp = timestamp_ns,
-              // TODO: should frame_id be incremented before GetNextImage?
+              // explain why not mutex here either
               .hardware_frame_id = frame_id_++,
         };
     }
@@ -937,6 +949,7 @@ spinnakercam_shutdown(struct Driver* self_)
     try {
         CHECK(self_);
         auto driver = (struct SpinnakerDriver*)self_;
+        // Consider moving this to the SpinnakerDriver destructor
         driver->shutdown();
         delete driver;
         return Device_Ok;
@@ -965,11 +978,14 @@ SpinnakerDriver::SpinnakerDriver()
 {
 }
 
+// Should we define a destructor and should 
+
 void
 SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
 {
     // TODO: shouldn't this check be done earlier?
     // DeviceManager device_id expects a uint8
+    // TODO: update for spinnaker uint requirement
     EXPECT(i < (1 << 8), "Expected a uint8 device index. Got: %llu", i);
 
     Spinnaker::CameraList camera_list = system_->GetCameras();
@@ -1006,6 +1022,7 @@ void
 SpinnakerDriver::open(uint64_t device_id, struct Device** out)
 {
     CHECK(out);
+    // Check this one too
     EXPECT(device_id < (1ULL << 8 * sizeof(int)) - 1,
            "Expected an int32 device id. Got: %llu",
            device_id);
