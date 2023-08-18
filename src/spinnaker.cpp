@@ -433,7 +433,12 @@ float
 SpinnakerCamera::maybe_set_exposure_time_us_(float target_us,
                                              float last_value_us)
 {
-    // TODO
+    if (target_us != last_value_us) {
+        target_us = clamp(target_us, last_known_capabilities_.exposure_time_us.low, last_known_capabilities_.exposure_time_us.high);
+        if (last_known_capabilities_.exposure_time_us.writable) {
+            camera_->ExposureTime = target_us;
+        }
+    }
     return last_value_us;
 }
 
@@ -445,8 +450,8 @@ SpinnakerCamera::maybe_set_binning(uint8_t target, uint8_t last_value)
                        last_known_capabilities_.binning.low,
                        last_known_capabilities_.binning.high);
         if (last_known_capabilities_.binning.writable) {
-            camera_->BinningHorizontal.SetValue(target);
-            camera_->BinningVertical.SetValue(target);
+            camera_->BinningHorizontal = target;
+            camera_->BinningVertical = target;
         }
         return target;
     }
