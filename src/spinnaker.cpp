@@ -170,6 +170,13 @@ clamp(T val, float low, float high)
                            : val;
 }
 
+void
+check_spinnaker_camera_id(uint64_t id)
+{
+    constexpr uint64_t limit = std::numeric_limits<unsigned int>::max();
+    EXPECT(id < limit, "Expected an unsigned int device index. Got: %llu", id);
+}
+
 //
 // Camera declaration
 //
@@ -983,15 +990,12 @@ SpinnakerDriver::SpinnakerDriver()
 {
 }
 
-// Should we define a destructor and should 
+// Should we define a destructor and should that call shutdown
 
 void
 SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
 {
-    // TODO: shouldn't this check be done earlier?
-    // DeviceManager device_id expects a uint8
-    // TODO: update for spinnaker uint requirement
-    EXPECT(i < (1 << 8), "Expected a uint8 device index. Got: %llu", i);
+    check_spinnaker_camera_id(i);
 
     Spinnaker::CameraList camera_list = system_->GetCameras();
     Spinnaker::CameraPtr camera = camera_list.GetByIndex((unsigned int)i);
@@ -1027,10 +1031,7 @@ void
 SpinnakerDriver::open(uint64_t device_id, struct Device** out)
 {
     CHECK(out);
-    // Check this one too
-    EXPECT(device_id < (1ULL << 8 * sizeof(int)) - 1,
-           "Expected an int32 device id. Got: %llu",
-           device_id);
+    check_spinnaker_camera_id(device_id);
     Spinnaker::CameraList camera_list = system_->GetCameras();
     Spinnaker::CameraPtr camera =
       camera_list.GetByIndex((unsigned int)device_id);
