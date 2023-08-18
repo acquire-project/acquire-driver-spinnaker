@@ -384,7 +384,7 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
     // this should prob go too
     stop();
     // This could happen if the same device is selected on two streams
-    // strongly consider using EXPECT to check this is not initialized
+    // TODO: strongly consider using EXPECT to check this is not initialized
     if (!camera->IsInitialized()) {
         camera->Init();
     }
@@ -433,7 +433,7 @@ SpinnakerCamera::set(struct CameraProperties* properties)
         properties->output_triggers.exposure,
         last_known_settings_.output_triggers.exposure);
 
-    // consider calling get here
+    // TODO: consider calling get here
 }
 
 float
@@ -823,7 +823,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     // bad for stop since it prevents teardown of the camera.
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
 
-    // Consider explaining why we don't acquire the camera mutex here.
+    // TODO: Consider explaining why we don't acquire the camera mutex here.
 
     if (frame->IsIncomplete()) {
         LOGE(
@@ -857,7 +857,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                   .type = to_sample_type(frame->GetPixelFormat()),
               },
               .hardware_timestamp = timestamp_ns,
-              // explain why not mutex here either
+              // TODO: explain why not mutex here either
               .hardware_frame_id = frame_id_++,
         };
     }
@@ -869,9 +869,11 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 // Driver declaration
 //
 
+// TODO: why is this not private inheritance and assignment like Camera?
 struct SpinnakerDriver final : public Driver
 {
     SpinnakerDriver();
+    ~SpinnakerDriver();
 
     uint32_t device_count();
     void describe(DeviceIdentifier* identifier, uint64_t i);
@@ -960,10 +962,7 @@ spinnakercam_shutdown(struct Driver* self_)
 {
     try {
         CHECK(self_);
-        auto driver = (struct SpinnakerDriver*)self_;
-        // Consider moving this to the SpinnakerDriver destructor
-        driver->shutdown();
-        delete driver;
+        delete (struct SpinnakerDriver*)self_;
         return Device_Ok;
     } catch (const std::exception& exc) {
         LOGE("Exception: %s\n", exc.what());
@@ -990,7 +989,9 @@ SpinnakerDriver::SpinnakerDriver()
 {
 }
 
-// Should we define a destructor and should that call shutdown
+SpinnakerDriver::~SpinnakerDriver() {
+    shutdown();
+}
 
 void
 SpinnakerDriver::describe(DeviceIdentifier* identifier, uint64_t i)
@@ -1042,8 +1043,7 @@ void
 SpinnakerDriver::close(struct Device* in)
 {
     CHECK(in);
-    auto camera = (SpinnakerCamera*)in;
-    delete camera;
+    delete (SpinnakerCamera*)in;
 }
 
 void
