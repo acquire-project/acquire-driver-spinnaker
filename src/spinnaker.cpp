@@ -32,126 +32,84 @@ namespace {
 // Utilities
 //
 
-TriggerEdge
-to_trigger_edge(Spinnaker::TriggerActivationEnums activation)
+template <typename T>
+T
+inv_at_or(
+    const std::unordered_map<T, Spinnaker::GenICam::gcstring> & table,
+    const Spinnaker::GenICam::gcstring & value,
+    const T default_result)
 {
-    switch (activation) {
-        case Spinnaker::TriggerActivation_RisingEdge:
-            return TriggerEdge_Rising;
-        case Spinnaker::TriggerActivation_FallingEdge:
-            return TriggerEdge_Falling;
-        case Spinnaker::TriggerActivation_AnyEdge:
-            return TriggerEdge_AnyEdge;
-        case Spinnaker::TriggerActivation_LevelHigh:
-            return TriggerEdge_LevelHigh;
-        case Spinnaker::TriggerActivation_LevelLow:
-            return TriggerEdge_LevelLow;
-        default:; // fall through to final return.
+    for (const auto & [k, v] : table) {
+        if (v == value) {
+            return k;
+        }
     }
-    return TriggerEdge_Unknown;
+    return default_result;
 }
 
-Spinnaker::TriggerActivationEnums
+const std::unordered_map<TriggerEdge, Spinnaker::GenICam::gcstring> trigger_edge_to_activation{
+    { TriggerEdge_Rising, "RisingEdge" },
+    { TriggerEdge_Falling, "FallingEdge" },
+    { TriggerEdge_AnyEdge, "AnyEdge" },
+    { TriggerEdge_LevelHigh, "LevelHigh" },
+    { TriggerEdge_LevelLow, "LevelLow" },
+};
+
+TriggerEdge
+to_trigger_edge(const Spinnaker::GenICam::gcstring & activation)
+{
+    return inv_at_or(trigger_edge_to_activation, activation, TriggerEdge_Unknown);
+}
+
+const Spinnaker::GenICam::gcstring &
 to_trigger_activation(TriggerEdge edge)
 {
-    switch (edge) {
-        case TriggerEdge_Rising:
-            return Spinnaker::TriggerActivation_RisingEdge;
-        case TriggerEdge_Falling:
-            return Spinnaker::TriggerActivation_FallingEdge;
-        case TriggerEdge_AnyEdge:
-            return Spinnaker::TriggerActivation_AnyEdge;
-        case TriggerEdge_LevelHigh:
-            return Spinnaker::TriggerActivation_LevelHigh;
-        case TriggerEdge_LevelLow:
-            return Spinnaker::TriggerActivation_LevelLow;
-        default:; // fall through to final error.
-    }
-    EXPECT(false, "Trigger edge %d unrecognized.", edge);
+    return trigger_edge_to_activation.at(edge);
 }
+
+const std::unordered_map<SampleType, Spinnaker::GenICam::gcstring> sample_type_to_pixel_format{
+    { SampleType_u8, "Mono8" },
+    { SampleType_i8, "Mono8s" },
+    { SampleType_u10, "Mono10" },
+    { SampleType_u12, "Mono12" },
+    { SampleType_u14, "Mono14" },
+    { SampleType_u16, "Mono16" },
+    { SampleType_i16, "Mono16s" },
+    { SampleType_f32, "Mono32f" },
+};
 
 SampleType
-to_sample_type(Spinnaker::PixelFormatEnums format)
+to_sample_type(const Spinnaker::GenICam::gcstring & pixel_format)
 {
-    switch (format) {
-        case Spinnaker::PixelFormat_Mono8:
-            return SampleType_u8;
-        case Spinnaker::PixelFormat_Mono8s:
-            return SampleType_i8;
-        case Spinnaker::PixelFormat_Mono10:
-            return SampleType_u10;
-        case Spinnaker::PixelFormat_Mono12:
-            return SampleType_u12;
-        case Spinnaker::PixelFormat_Mono14:
-            return SampleType_u14;
-        case Spinnaker::PixelFormat_Mono16:
-            return SampleType_u16;
-        case Spinnaker::PixelFormat_Mono16s:
-            return SampleType_i16;
-        case Spinnaker::PixelFormat_Mono32f:
-            return SampleType_f32;
-        default:; // fall through to final return.
-    }
-    return SampleType_Unknown;
+    return inv_at_or(sample_type_to_pixel_format, pixel_format, SampleType_Unknown);
 }
 
-Spinnaker::PixelFormatEnums
-to_pixel_format(SampleType type)
+const Spinnaker::GenICam::gcstring &
+to_pixel_format(SampleType sample_type)
 {
-    switch (type) {
-        case SampleType_u8:
-            return Spinnaker::PixelFormat_Mono8;
-        case SampleType_i8:
-            return Spinnaker::PixelFormat_Mono8s;
-        case SampleType_u10:
-            return Spinnaker::PixelFormat_Mono10;
-        case SampleType_u12:
-            return Spinnaker::PixelFormat_Mono12;
-        case SampleType_u14:
-            return Spinnaker::PixelFormat_Mono14;
-        case SampleType_u16:
-            return Spinnaker::PixelFormat_Mono16;
-        case SampleType_i16:
-            return Spinnaker::PixelFormat_Mono16s;
-        case SampleType_f32:
-            return Spinnaker::PixelFormat_Mono32f;
-        default:; // fall through to final error.
-    }
-    EXPECT(false, "Sample type %d unrecognized.", type);
+    return sample_type_to_pixel_format.at(sample_type);
 }
 
 // Define the software line as acquire's line 2 because the Blackfly USB3 camera
 // only has two physical lines (0 and 1).
 // Similarly define acquire's line 3 as unknown.
 
+const std::unordered_map<uint8_t, Spinnaker::GenICam::gcstring> trigger_line_to_source{
+    {0, "Line0"},
+    {1, "Line1"},
+    {2, "Software"},
+};
+
 uint8_t
-to_trigger_line(Spinnaker::TriggerSourceEnums source)
+to_trigger_line(const Spinnaker::GenICam::gcstring & source)
 {
-    switch (source) {
-        case Spinnaker::TriggerSource_Line0:
-            return 0;
-        case Spinnaker::TriggerSource_Line1:
-            return 1;
-        case Spinnaker::TriggerSource_Software:
-            return 2;
-        default:; // fall through to final return.
-    }
-    return 3;
+    return inv_at_or<uint8_t>(trigger_line_to_source, source, 3);
 }
 
-Spinnaker::TriggerSourceEnums
+const Spinnaker::GenICam::gcstring &
 to_trigger_source(uint8_t line)
 {
-    switch (line) {
-        case 0:
-            return Spinnaker::TriggerSource_Line0;
-        case 1:
-            return Spinnaker::TriggerSource_Line1;
-        case 2:
-            return Spinnaker::TriggerSource_Software;
-        default:; // fall through to final error.
-    }
-    EXPECT(false, "Trigger line %d unrecognized.", line);
+    return trigger_line_to_source.at(line);
 }
 
 bool
@@ -471,19 +429,8 @@ SampleType
 SpinnakerCamera::maybe_set_sample_type(SampleType target, SampleType last_known)
 {
     CHECK(target < SampleTypeCount);
-    if (target == last_known) {
-        return last_known;
-    }
-    const Spinnaker::PixelFormatEnums format = to_pixel_format(target);
-    if (IsReadable(camera_->PixelFormat) && IsWritable(camera_->PixelFormat)) {
-        Spinnaker::GenApi::IEnumEntry* entry =
-          camera_->PixelFormat.GetEntry((int)format);
-        EXPECT(IsReadable(entry),
-               "Sample type %d recognized as pixel format %d, but not "
-               "supported by this camera.",
-               target,
-               format);
-        camera_->PixelFormat.SetIntValue(entry->GetValue());
+    if (target != last_known) {
+        camera_->PixelFormat = to_pixel_format(target);
     }
     return target;
 }
@@ -544,28 +491,17 @@ Trigger&
 SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target,
                                                      const Trigger& last)
 {
-    if (is_equal(target, last)) {
-        return target;
-    }
-    if (IsReadable(camera_->TriggerSelector) &&
-        IsWritable(camera_->TriggerSelector)) {
-        // Always disable trigger before any other configuration.
-        camera_->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
+    if (!is_equal(target, last)) {
+        if (IsReadable(camera_->TriggerSelector) &&
+            IsWritable(camera_->TriggerSelector)) {
+            // Always disable trigger before any other configuration.
+            camera_->TriggerMode = "Off";
 
-        camera_->TriggerSelector.SetValue(
-          Spinnaker::TriggerSelector_FrameStart);
-
-        const Spinnaker::TriggerSourceEnums trigger_source =
-          to_trigger_source(target.line);
-        camera_->TriggerSource.SetValue(trigger_source);
-
-        const Spinnaker::TriggerActivationEnums trigger_activation =
-          to_trigger_activation(target.edge);
-        camera_->TriggerActivation.SetValue(trigger_activation);
-
-        camera_->TriggerMode.SetValue(target.enable
-                                        ? Spinnaker::TriggerMode_On
-                                        : Spinnaker::TriggerMode_Off);
+            camera_->TriggerSelector = "FrameStart";
+            camera_->TriggerSource = to_trigger_source(target.line);
+            camera_->TriggerActivation = to_trigger_activation(target.edge);
+            camera_->TriggerMode = target.enable ? "On" : "Off";
+        }
     }
     return target;
 }
@@ -574,15 +510,14 @@ Trigger&
 SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target,
                                                    const Trigger& last)
 {
-    if (is_equal(target, last)) {
-        return target;
-    }
-    // switch IsReadable to a check
-    if (IsReadable(camera_->LineSelector) &&
-        IsWritable(camera_->LineSelector)) {
-        camera_->LineSelector.SetValue(Spinnaker::LineSelector_Line1);
-        camera_->LineMode.SetValue(Spinnaker::LineMode_Output);
-        camera_->LineSource.SetValue(Spinnaker::LineSource_ExposureActive);
+    if (!is_equal(target, last)) {
+        // switch IsReadable to a check
+        if (IsReadable(camera_->LineSelector) &&
+            IsWritable(camera_->LineSelector)) {
+            camera_->LineSelector = "Line1";
+            camera_->LineMode = "Output";
+            camera_->LineSource = "ExposureActive";
+        }
     }
     return target;
 }
@@ -594,7 +529,7 @@ SpinnakerCamera::get(struct CameraProperties* properties)
     *properties = {
         .exposure_time_us = (float)camera_->ExposureTime(),
         .binning = (uint8_t)camera_->BinningHorizontal(),
-        .pixel_type = to_sample_type(camera_->PixelFormat()),
+        .pixel_type = to_sample_type(*(camera_->PixelFormat)),
         .offset = {
           .x = (uint32_t)camera_->OffsetX(),
           .y = (uint32_t)camera_->OffsetY(),
@@ -605,29 +540,25 @@ SpinnakerCamera::get(struct CameraProperties* properties)
         },
     };
 
-    // at least log when something cannot be populated
+    // TODO: at least log when something cannot be populated
 
     // Only reads frame_start input trigger if it currently configured.
-    if (IsReadable(camera_->TriggerSelector) &&
-        IsReadable(camera_->TriggerSource)) {
-        if (camera_->TriggerSelector() ==
-            Spinnaker::TriggerSelector_FrameStart) {
+    if (IsReadable(camera_->TriggerSelector) && IsReadable(camera_->TriggerSource)) {
+        if (*(camera_->TriggerSelector) == "FrameStart") {
             auto& trigger = properties->input_triggers.frame_start;
             trigger.kind = Signal_Input;
-            trigger.enable =
-              camera_->TriggerMode() == Spinnaker::TriggerMode_On;
-            trigger.line = to_trigger_line(camera_->TriggerSource());
-            trigger.edge = to_trigger_edge(camera_->TriggerActivation());
+            trigger.enable = *(camera_->TriggerMode) == "On";
+            trigger.line = to_trigger_line(*(camera_->TriggerSource));
+            trigger.edge = to_trigger_edge(*(camera_->TriggerActivation));
         }
     }
 
     // Only reads exposure output trigger if it currently configured on line 1.
     if (IsReadable(camera_->LineSelector) && IsReadable(camera_->LineSource)) {
-        if (camera_->LineSelector() == Spinnaker::LineSelector_Line1) {
+        if (*(camera_->LineSelector) == "Line1") {
             auto& trigger = properties->output_triggers.exposure;
             trigger.kind = Signal_Output;
-            trigger.enable =
-              camera_->LineSource() == Spinnaker::LineSource_ExposureActive;
+            trigger.enable = *(camera_->LineSource) == "ExposureActive";
             trigger.line = 1;
             // TODO: check with Nathan if this is the expected edge.
             trigger.edge = TriggerEdge_LevelHigh;
@@ -719,12 +650,9 @@ SpinnakerCamera::query_pixel_type_capabilities_(
   CameraPropertyMetadata* meta) const
 {
     meta->supported_pixel_types = 0;
-    Spinnaker::GenApi::NodeList_t pixel_formats;
-    camera_->PixelFormat.GetEntries(pixel_formats);
-    for (Spinnaker::GenApi::INode* node : pixel_formats) {
-        auto entry = dynamic_cast<Spinnaker::GenApi::IEnumEntry*>(node);
-        EXPECT(entry, "Unable to cast to enum entry.");
-        const auto format = (Spinnaker::PixelFormatEnums)entry->GetValue();
+    Spinnaker::GenApi::StringList_t pixel_formats;
+    camera_->PixelFormat.GetSymbolics(pixel_formats);
+    for (const Spinnaker::GenICam::gcstring format : pixel_formats) {
         const SampleType sample_type = to_sample_type(format);
         meta->supported_pixel_types |= (1ULL << sample_type);
     }
@@ -772,7 +700,7 @@ SpinnakerCamera::get_shape(struct ImageShape* shape) const
           .height = width,
           .planes = width*height,
         },
-        .type = to_sample_type(camera_->PixelFormat()),
+        .type = to_sample_type(*(camera_->PixelFormat)),
     };
 }
 
@@ -856,7 +784,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                                .height = (int64_t)width,
                                .planes = (int64_t)(width * height),
                   },
-                  .type = to_sample_type(frame->GetPixelFormat()),
+                  .type = to_sample_type(frame->GetPixelFormatName()),
               },
               .hardware_timestamp = timestamp_ns,
               // TODO: explain why not mutex here either
