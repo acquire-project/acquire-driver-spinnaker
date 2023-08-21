@@ -703,13 +703,9 @@ SpinnakerCamera::start()
     const std::scoped_lock lock(lock_);
     frame_id_ = 0;
 
-    EXPECT(IsReadable(camera_->AcquisitionMode) &&
-             IsWritable(camera_->AcquisitionMode),
-           "Unable to get and set acquisition mode.");
-    EXPECT(IsReadable(camera_->AcquisitionMode.GetEntry(
-             (int64_t)Spinnaker::AcquisitionMode_Continuous)),
-           "Unable to get or set acquisition mode to continuous.");
-    camera_->AcquisitionMode.SetValue(Spinnaker::AcquisitionMode_Continuous);
+    EXPECT(IsWritable(camera_->AcquisitionMode), "Unable to set acquisition mode.");
+    EXPECT(IsReadable(camera_->AcquisitionMode.GetEntryByName("Continuous")), "Unable to set acquisition mode to continuous.");
+    camera_->AcquisitionMode = "Continuous";
 
     camera_->BeginAcquisition();
 }
@@ -723,7 +719,7 @@ SpinnakerCamera::stop()
     // TODO: consider enabling triggers in start rather than configure because
     // otherwise disabling here creates some inconsistency.
     if (IsReadable(camera_->TriggerMode) && IsWritable(camera_->TriggerMode)) {
-        camera_->TriggerMode.SetValue(Spinnaker::TriggerMode_Off);
+        camera_->TriggerMode = "Off";
     }
     if (camera_->IsStreaming()) {
         camera_->EndAcquisition();
@@ -742,11 +738,14 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 {
     // Adapted from the Acquisition.cpp example distributed with the Spinnaker
     // SDK. Cannot acquire the camera lock here because GetNextImage may await
-    // a trigger indefinitely effectively causing a deadlock that is especially
-    // bad for stop since it prevents teardown of the camera.
+    // a trigger indefinitely effectively causing a deadlock with other methods
+    // that acquire the camera lock (like stop).
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
 
-    // TODO: Consider explaining why we don't acquire the camera mutex here.
+    // No need to acquire the camera lock after getting the image because we
+    // do not access the Spinnaker camera API from here (only the image) and
+    // frame_id_ does not need to be guarded due to other ordering that
+    // acquire guarantees.
 
     if (frame->IsIncomplete()) {
         LOGE(
@@ -780,13 +779,12 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                   .type = to_sample_type(frame->GetPixelFormatName()),
               },
               .hardware_timestamp = timestamp_ns,
-              // TODO: explain why not mutex here either
               .hardware_frame_id = frame_id_++,
         };
     }
 
-    // Possibly unneeded, but we manually release as in Acquistion.cpp because
-    // this image was retrieved directly from the camera.
+    // Possibly unneeded, but we manually release as instructed in the Spinnaker
+    // Acquistion.cpp example because this image was retrieved directly from the camera.
     frame->Release();
 }
 
@@ -794,7 +792,6 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 // Driver declaration
 //
 
-// TODO: why is this not private inheritance and assignment like Camera?
 struct SpinnakerDriver final : public Driver
 {
     explicit SpinnakerDriver();
