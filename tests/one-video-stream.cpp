@@ -66,7 +66,7 @@ main()
                                     &props.video[0].storage.identifier));
 
         storage_properties_init(
-          &props.video[0].storage.settings, 0, SIZED("out.zarr"), 0, 0, { 0 });
+          &props.video[0].storage.settings, 0, SIZED("out.zarr"), 0, 0, { .x = 1, .y = 1 });
 
         OK(acquire_configure(runtime, &props));
 
@@ -81,12 +81,6 @@ main()
         };
         props.video[0].camera.settings.exposure_time_us = 1e4;
         props.video[0].max_frame_count = 10;
-
-        // TODO: need to explicitly set chunk/tile shape because otherwise
-        // they are zero and writing fails.
-        props.video[0].storage.settings.chunking.tile.width = 256;
-        props.video[0].storage.settings.chunking.tile.height = 256;
-        props.video[0].storage.settings.chunking.tile.planes = 1;
 
         OK(acquire_configure(runtime, &props));
 
@@ -148,7 +142,6 @@ main()
         return 0;
     } catch (const std::runtime_error& e) {
         ERR("Runtime error: %s", e.what());
-
     } catch (...) {
         ERR("Uncaught exception");
     }

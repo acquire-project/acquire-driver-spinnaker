@@ -331,7 +331,14 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   , last_known_settings_{}
   , frame_id_(0)
 {
-    CHECK(!camera->IsInitialized());
+    // Sometimes the camera is still initialized even after running CameraBase::DeInit
+    // Ideally, we would error here, but that can make the camera indefinitely unusable
+    // in Acquire, so log and try to recover instead.
+    if (camera->IsInitialized()) {
+        LOGE("Camera was already initialized. Stopping and de-initializing it before initialization.");
+        stop();
+        camera_->DeInit();
+    }
     camera->Init();
     get(&last_known_settings_);
     get_meta(&last_known_capabilities_);

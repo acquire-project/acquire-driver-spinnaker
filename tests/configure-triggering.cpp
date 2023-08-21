@@ -150,7 +150,6 @@ main()
         return 0;
     } catch (const std::runtime_error& e) {
         ERR("Runtime error: %s", e.what());
-
     } catch (...) {
         ERR("Uncaught exception");
     }

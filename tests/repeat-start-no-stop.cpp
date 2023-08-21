@@ -44,46 +44,54 @@ reporter(int is_error,
 int
 main()
 {
-    AcquireRuntime* runtime;
-    CHECK(runtime = acquire_init(reporter));
-    const DeviceManager* dm;
-    CHECK(dm = acquire_device_manager(runtime));
+    AcquireRuntime* runtime = nullptr;
+    try {
+        CHECK(runtime = acquire_init(reporter));
+        const DeviceManager* dm;
+        CHECK(dm = acquire_device_manager(runtime));
 
-    AcquireProperties properties = {};
-    {
-        AOK(acquire_get_configuration(runtime, &properties));
-        DEV(device_manager_select(dm,
-                                  DeviceKind_Camera,
-                                  SIZED(".*BFLY.*") - 1,
-                                  &properties.video[0].camera.identifier));
-        DEV(device_manager_select(dm,
-                                  DeviceKind_Storage,
-                                  SIZED("Trash") - 1,
-                                  &properties.video[0].storage.identifier));
+        AcquireProperties properties = {};
+        {
+            AOK(acquire_get_configuration(runtime, &properties));
+            DEV(device_manager_select(dm,
+                                      DeviceKind_Camera,
+                                      SIZED(".*BFLY.*") - 1,
+                                      &properties.video[0].camera.identifier));
+            DEV(device_manager_select(dm,
+                                      DeviceKind_Storage,
+                                      SIZED("Trash") - 1,
+                                      &properties.video[0].storage.identifier));
 
-        properties.video[0].camera.settings.binning = 1;
-        properties.video[0].camera.settings.exposure_time_us = 1e4;
-        properties.video[0].max_frame_count = 1 << 30;
+            properties.video[0].camera.settings.binning = 1;
+            properties.video[0].camera.settings.exposure_time_us = 1e4;
+            properties.video[0].max_frame_count = 1 << 30;
 
-        AOK(acquire_configure(runtime, &properties));
-    }
-
-    AOK(acquire_start(runtime));
-
-    // await some data
-    {
-        VideoFrame *beg = nullptr, *end = nullptr;
-        while (beg == end) {
-            acquire_map_read(runtime, 0, &beg, &end);
-            clock_sleep_ms(nullptr, 50.0);
+            AOK(acquire_configure(runtime, &properties));
         }
-        acquire_unmap_read(runtime, 0, (uint8_t*)end - (uint8_t*)beg);
+
+        AOK(acquire_start(runtime));
+
+        // await some data
+        {
+            VideoFrame *beg = nullptr, *end = nullptr;
+            while (beg == end) {
+                AOK(acquire_map_read(runtime, 0, &beg, &end));
+                clock_sleep_ms(nullptr, 50.0);
+            }
+            AOK(acquire_unmap_read(runtime, 0, (uint8_t*)end - (uint8_t*)beg));
+        }
+
+        CHECK(AcquireStatus_Error == acquire_start(runtime));
+        AOK(acquire_abort(runtime));
+
+        AOK(acquire_shutdown(runtime));
+        LOG("OK");
+        return 0;
+    } catch (const std::exception& e) {
+        ERR("Exception: %s", e.what());
+    } catch (...) {
+        ERR("Exception: (unknown)");
     }
-
-    CHECK(AcquireStatus_Error == acquire_start(runtime));
-    AOK(acquire_abort(runtime));
-
     acquire_shutdown(runtime);
-    LOG("OK");
-    return 0;
+    return 1;
 }
