@@ -268,20 +268,14 @@ spinnakercam_stop(struct Camera* self_)
 enum DeviceStatusCode
 spinnakercam_start(struct Camera* self_)
 {
-    // If things didn't get shut down properly before,
-    // sometimes start fails.
-    for (int attempts = 0; attempts < 2; ++attempts) {
-        try {
-            CHECK(self_);
-            ((struct SpinnakerCamera*)self_)->start();
-            return Device_Ok;
-        } catch (const std::exception& exc) {
-            LOGE("Exception: %s\n", exc.what());
-        } catch (...) {
-            LOGE("Exception: (unknown)");
-        }
-        LOGE("Retrying camera start");
-        spinnakercam_stop(self_);
+    try {
+        CHECK(self_);
+        ((struct SpinnakerCamera*)self_)->start();
+        return Device_Ok;
+    } catch (const std::exception& exc) {
+        LOGE("Exception: %s\n", exc.what());
+    } catch (...) {
+        LOGE("Exception: (unknown)");
     }
     return Device_Err;
 }
