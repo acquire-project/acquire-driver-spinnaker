@@ -32,6 +32,16 @@ namespace {
 // Utilities
 //
 
+// Define GenICam enum member names as constant strings to avoid typos
+// and to avoid temporary gcstring instances when used with Spinnaker.
+const Spinnaker::GenICam::gcstring genicam_off("Off");
+const Spinnaker::GenICam::gcstring genicam_on("On");
+const Spinnaker::GenICam::gcstring genicam_frame_start("FrameStart");
+const Spinnaker::GenICam::gcstring genicam_line_1("Line1");
+const Spinnaker::GenICam::gcstring genicam_output("Output");
+const Spinnaker::GenICam::gcstring genicam_exposure_active("ExposureActive");
+const Spinnaker::GenICam::gcstring genicam_continuous("Continuous");
+
 template <typename T>
 T
 inv_at_or(
@@ -386,8 +396,6 @@ SpinnakerCamera::set(struct CameraProperties* properties)
       maybe_set_output_trigger_exposure(
         properties->output_triggers.exposure,
         last_known_settings_.output_triggers.exposure);
-
-    // TODO: consider calling get here
 }
 
 float
@@ -487,12 +495,12 @@ SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target,
 {
     if (!is_equal(target, last)) {
         // Always disable trigger before any other configuration.
-        camera_->TriggerMode = "Off";
+        camera_->TriggerMode = genicam_off;
 
-        camera_->TriggerSelector = "FrameStart";
+        camera_->TriggerSelector = genicam_frame_start;
         camera_->TriggerSource = to_trigger_source(target.line);
         camera_->TriggerActivation = to_trigger_activation(target.edge);
-        camera_->TriggerMode = target.enable ? "On" : "Off";
+        camera_->TriggerMode = target.enable ? genicam_on : genicam_off;
     }
     return target;
 }
@@ -502,9 +510,9 @@ SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target,
                                                    const Trigger& last)
 {
     if (!is_equal(target, last)) {
-        camera_->LineSelector = "Line1";
-        camera_->LineMode = "Output";
-        camera_->LineSource = "ExposureActive";
+        camera_->LineSelector = genicam_line_1;
+        camera_->LineMode = genicam_output;
+        camera_->LineSource = genicam_exposure_active;
     }
     return target;
 }
@@ -528,19 +536,19 @@ SpinnakerCamera::get(struct CameraProperties* properties)
     };
 
     // Only reads frame_start input trigger if it currently configured.
-    if (*(camera_->TriggerSelector) == "FrameStart") {
+    if (*(camera_->TriggerSelector) == genicam_frame_start) {
         auto& trigger = properties->input_triggers.frame_start;
         trigger.kind = Signal_Input;
-        trigger.enable = *(camera_->TriggerMode) == "On";
+        trigger.enable = *(camera_->TriggerMode) == genicam_on;
         trigger.line = to_trigger_line(*(camera_->TriggerSource));
         trigger.edge = to_trigger_edge(*(camera_->TriggerActivation));
     }
 
     // Only reads exposure output trigger if it currently configured on line 1.
-    if (*(camera_->LineSelector) == "Line1") {
+    if (*(camera_->LineSelector) == genicam_line_1) {
         auto& trigger = properties->output_triggers.exposure;
         trigger.kind = Signal_Output;
-        trigger.enable = *(camera_->LineSource) == "ExposureActive";
+        trigger.enable = *(camera_->LineSource) == genicam_exposure_active;
         trigger.line = 1;
         // TODO: check with Nathan if this is the expected edge.
         trigger.edge = TriggerEdge_LevelHigh;
@@ -691,7 +699,7 @@ SpinnakerCamera::start()
 {
     const std::scoped_lock lock(lock_);
     frame_id_ = 0;
-    camera_->AcquisitionMode = "Continuous";
+    camera_->AcquisitionMode = genicam_continuous;
     camera_->BeginAcquisition();
 }
 
@@ -702,7 +710,7 @@ SpinnakerCamera::stop()
     // Disable the current trigger to prevent an effective deadlock between
     // EndAcquisition and GetNextFrame that is awaiting a trigger.
     if (IsWritable(camera_->TriggerMode)) {
-        camera_->TriggerMode = "Off";
+        camera_->TriggerMode = genicam_off;
     }
     if (camera_->IsStreaming()) {
         camera_->EndAcquisition();
