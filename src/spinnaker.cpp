@@ -1,4 +1,9 @@
-/// @file Driver wrapping the spinnaker SDK.
+/// @file Driver wrapping the Spinnaker SDK.
+///
+/// This implements SpinnakerCamera and SpinnakerDriver structs in C++
+/// since the Spinnaker SDK is C++. The methods of those classes are
+/// then bound to the Camera and Driver C structs in the Acquire API.
+
 #include "device/props/camera.h"
 #include "device/kit/camera.h"
 #include "device/kit/driver.h"
@@ -41,6 +46,7 @@ const Spinnaker::GenICam::gcstring genicam_line_1("Line1");
 const Spinnaker::GenICam::gcstring genicam_output("Output");
 const Spinnaker::GenICam::gcstring genicam_exposure_active("ExposureActive");
 const Spinnaker::GenICam::gcstring genicam_continuous("Continuous");
+const Spinnaker::GenICam::gcstring genicam_timed("Timed");
 
 template <typename T>
 T
@@ -129,13 +135,44 @@ is_equal(const Trigger& lhs, const Trigger& rhs)
 }
 
 template<typename T>
-static T
-clamp(T val, float low, float high)
+T
+clamp(T val, T low, T high)
 {
-    float fval = float(val);
-    return (fval < low)    ? static_cast<T>(low)
-           : (fval > high) ? static_cast<T>(high)
-                           : val;
+    if (val < low)
+        return low;
+    if (val > high)
+        return high;
+    return val;
+}
+
+void
+set_enum_property(Spinnaker::GenApi::IEnumeration & property, const Spinnaker::GenICam::gcstring & value)
+{
+    EXPECT(IsWritable(property), "Spinnaker property %s is not writable.", property.GetName().c_str());
+    property = value;
+}
+
+void
+set_int_property(Spinnaker::GenApi::IInteger & property, int64_t value)
+{
+    EXPECT(IsWritable(property), "Spinnaker property %s is not writable.", property.GetName().c_str());
+    const int64_t min = property.GetMin();
+    const int64_t max = property.GetMax();
+    value = clamp(value, min, max);
+    property = value;
+}
+
+// In general, Acquire uses single precision floats whereas Spinnaker uses double.
+// The desired value should be cast to double to match the precision of Spinnaker
+// so the clamped value is always in range and can be safely passed to Spinnaker.
+void
+set_float_property(Spinnaker::GenApi::IFloat & property, double value)
+{
+    EXPECT(IsWritable(property), "Spinnaker property %s is not writable.", property.GetName().c_str());
+    const double min = property.GetMin();
+    const double max = property.GetMax();
+    value = clamp(value, min, max);
+    property = value;
 }
 
 void
@@ -166,33 +203,31 @@ struct SpinnakerCamera final : private Camera
   private:
     // Guards access to camera_.
     mutable std::mutex lock_;
-    // Hold a reference to the camera as a concise way to get and set
-    // its state (rather than through its GenICam node map).
+    // Used as a concise way to get and set a Spinnaker camera's state,
+    // rather than through its GenICam node map.
     Spinnaker::CameraPtr camera_;
     uint64_t frame_id_;
+    // Setting properties on the device may be expensive, so these are
+    // used to avoid doing so when a property value is unchanged.
     struct CameraProperties last_known_settings_;
-    struct CameraPropertyMetadata last_known_capabilities_;
 
-    void query_exposure_time_capabilities_(CameraPropertyMetadata* meta) const;
-    void query_binning_capabilities_(CameraPropertyMetadata* meta) const;
-    void query_roi_offset_capabilities_(CameraPropertyMetadata* meta) const;
-    void query_roi_shape_capabilities_(CameraPropertyMetadata* meta) const;
-    void query_pixel_type_capabilities_(CameraPropertyMetadata* meta) const;
-    static void query_triggering_capabilities_(CameraPropertyMetadata* meta);
+    void query_exposure_time_capabilites(CameraPropertyMetadata* meta) const;
+    void query_binning_capabilites(CameraPropertyMetadata* meta) const;
+    void query_roi_offset_capabilites(CameraPropertyMetadata* meta) const;
+    void query_roi_shape_capabilites(CameraPropertyMetadata* meta) const;
+    void query_pixel_type_capabilites(CameraPropertyMetadata* meta) const;
+    static void query_triggering_capabilites(CameraPropertyMetadata* meta);
 
-    float maybe_set_exposure_time_us_(float target_us, float last_value_us);
-    uint8_t maybe_set_binning(uint8_t target, uint8_t last_value);
-    SampleType maybe_set_sample_type(SampleType target, SampleType last_known);
-    CameraProperties::camera_properties_offset_s maybe_set_offset(
-      CameraProperties::camera_properties_offset_s target,
-      CameraProperties::camera_properties_offset_s last);
-    CameraProperties::camera_properties_shape_s maybe_set_shape(
-      CameraProperties::camera_properties_shape_s target,
-      CameraProperties::camera_properties_shape_s last);
-    Trigger& maybe_set_input_trigger_frame_start(Trigger& target,
-                                                 const Trigger& last);
-    Trigger& maybe_set_output_trigger_exposure(Trigger& target,
-                                               const Trigger& last);
+    void maybe_set_exposure_time_us(float target_us);
+    void maybe_set_binning(uint8_t target);
+    void maybe_set_sample_type(SampleType target);
+    void maybe_set_offset(CameraProperties::camera_properties_offset_s target);
+    void maybe_set_shape(CameraProperties::camera_properties_shape_s target);
+    void maybe_set_input_trigger_frame_start(Trigger& target);
+    void maybe_set_output_trigger_exposure(Trigger& target);
+
+    void update_input_trigger(Trigger& trigger);
+    void update_output_trigger_exposure(Trigger& trigger);
 };
 
 //
@@ -351,7 +386,6 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
     }
     camera->Init();
     get(&last_known_settings_);
-    get_meta(&last_known_capabilities_);
 }
 
 SpinnakerCamera::~SpinnakerCamera()
@@ -371,150 +405,122 @@ void
 SpinnakerCamera::set(struct CameraProperties* properties)
 {
     const std::scoped_lock lock(lock_);
-
-    last_known_settings_.exposure_time_us = maybe_set_exposure_time_us_(
-      properties->exposure_time_us, last_known_settings_.exposure_time_us);
-
-    last_known_settings_.binning =
-      maybe_set_binning(properties->binning, last_known_settings_.binning);
-
-    last_known_settings_.pixel_type = maybe_set_sample_type(
-      properties->pixel_type, last_known_settings_.pixel_type);
-
-    last_known_settings_.offset =
-      maybe_set_offset(properties->offset, last_known_settings_.offset);
-
-    last_known_settings_.shape =
-      maybe_set_shape(properties->shape, last_known_settings_.shape);
-
-    last_known_settings_.input_triggers.frame_start =
-      maybe_set_input_trigger_frame_start(
-        properties->input_triggers.frame_start,
-        last_known_settings_.input_triggers.frame_start);
-
-    last_known_settings_.output_triggers.exposure =
-      maybe_set_output_trigger_exposure(
-        properties->output_triggers.exposure,
-        last_known_settings_.output_triggers.exposure);
+    maybe_set_exposure_time_us(properties->exposure_time_us);
+    maybe_set_binning(properties->binning);
+    maybe_set_sample_type(properties->pixel_type);
+    maybe_set_offset(properties->offset);
+    maybe_set_shape(properties->shape);
+    maybe_set_input_trigger_frame_start(properties->input_triggers.frame_start);
+    maybe_set_output_trigger_exposure(properties->output_triggers.exposure);
 }
 
-float
-SpinnakerCamera::maybe_set_exposure_time_us_(float target_us,
-                                             float last_value_us)
+void
+SpinnakerCamera::maybe_set_exposure_time_us(float target_us)
 {
-    if (target_us != last_value_us) {
-        target_us = clamp(target_us, last_known_capabilities_.exposure_time_us.low, last_known_capabilities_.exposure_time_us.high);
-        if (last_known_capabilities_.exposure_time_us.writable) {
-            camera_->ExposureTime = target_us;
-        }
+    if (target_us != last_known_settings_.exposure_time_us) {
+        // Exposure configuration determines if exposure time is writable
+        // and its min and max values. Acquire only supports manually setting
+        // exposure time, so enforce that here.
+        set_enum_property(camera_->ExposureAuto, genicam_off);
+        set_enum_property(camera_->ExposureMode, genicam_timed);
+        set_float_property(camera_->ExposureTime, (double)target_us);
+        // TODO: may not need to actually get from camera because try_camera_set
+        // in runtime/source.c calls get after calling set.
+        last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
     }
-    return last_value_us;
 }
 
-uint8_t
-SpinnakerCamera::maybe_set_binning(uint8_t target, uint8_t last_value)
+void
+SpinnakerCamera::maybe_set_binning(uint8_t target)
 {
-    if (target != last_value) {
-        target = clamp(target,
-                       last_known_capabilities_.binning.low,
-                       last_known_capabilities_.binning.high);
-        if (last_known_capabilities_.binning.writable) {
-            camera_->BinningHorizontal = target;
-            camera_->BinningVertical = target;
-        }
-        return target;
+    if (target != last_known_settings_.binning) {
+        set_int_property(camera_->BinningHorizontal, (int64_t)target);
+        set_int_property(camera_->BinningVertical, (int64_t)target);
+        last_known_settings_.binning = (float)camera_->BinningHorizontal();
     }
-    return last_value;
 }
 
-SampleType
-SpinnakerCamera::maybe_set_sample_type(SampleType target, SampleType last_known)
+void
+SpinnakerCamera::maybe_set_sample_type(SampleType target)
 {
     CHECK(target < SampleTypeCount);
-    if (target != last_known) {
-        camera_->PixelFormat = to_pixel_format(target);
+    if (target != last_known_settings_.pixel_type) {
+        set_enum_property(camera_->PixelFormat, to_pixel_format(target));
+        last_known_settings_.pixel_type = to_sample_type(*(camera_->PixelFormat));
     }
-    return target;
 }
 
-CameraProperties::camera_properties_offset_s
-SpinnakerCamera::maybe_set_offset(
-  CameraProperties::camera_properties_offset_s target,
-  CameraProperties::camera_properties_offset_s last)
+void
+SpinnakerCamera::maybe_set_offset(CameraProperties::camera_properties_offset_s target)
 {
+    CameraProperties::camera_properties_offset_s & last = last_known_settings_.offset;
     if (target.x != last.x) {
-        target.x = clamp(target.x,
-                         last_known_capabilities_.offset.x.low,
-                         last_known_capabilities_.offset.x.high);
-        if (last_known_capabilities_.offset.x.writable) {
-            camera_->OffsetX = target.x;
-        }
-        last.x = target.x;
+        set_int_property(camera_->OffsetX, (int64_t)target.x);
+        last.x = (uint32_t)camera_->OffsetX();
     }
     if (target.y != last.y) {
-        target.y = clamp(target.y,
-                         last_known_capabilities_.offset.y.low,
-                         last_known_capabilities_.offset.y.high);
-        if (last_known_capabilities_.offset.y.writable) {
-            camera_->OffsetY = target.y;
-        }
-        last.y = target.y;
+        set_int_property(camera_->OffsetY, (int64_t)target.y);
+        last.y = (uint32_t)camera_->OffsetY();
     }
-    return last;
 }
 
-CameraProperties::camera_properties_shape_s
-SpinnakerCamera::maybe_set_shape(
-  CameraProperties::camera_properties_shape_s target,
-  CameraProperties::camera_properties_shape_s last)
+void
+SpinnakerCamera::maybe_set_shape(CameraProperties::camera_properties_shape_s target)
 {
+    CameraProperties::camera_properties_shape_s & last = last_known_settings_.shape;
     if (target.x != last.x) {
-        target.x = clamp(target.x,
-                         last_known_capabilities_.shape.x.low,
-                         last_known_capabilities_.shape.x.high);
-        if (last_known_capabilities_.shape.x.writable) {
-            camera_->Width = target.x;
-        }
-        last.x = target.x;
+        set_int_property(camera_->Width, (int64_t)target.x);
+        last.x = (uint32_t)camera_->Width();
     }
     if (target.y != last.y) {
-        target.y = clamp(target.y,
-                         last_known_capabilities_.shape.y.low,
-                         last_known_capabilities_.shape.y.high);
-        if (last_known_capabilities_.shape.y.writable) {
-            camera_->Height = target.y;
-        }
-        last.y = target.y;
+        set_int_property(camera_->Height, (int64_t)target.y);
+        last.y = (uint32_t)camera_->Height();
     }
-    return last;
 }
 
-Trigger&
-SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target,
-                                                     const Trigger& last)
-{
-    if (!is_equal(target, last)) {
-        // Always disable trigger before any other configuration.
-        camera_->TriggerMode = genicam_off;
-
-        camera_->TriggerSelector = genicam_frame_start;
-        camera_->TriggerSource = to_trigger_source(target.line);
-        camera_->TriggerActivation = to_trigger_activation(target.edge);
-        camera_->TriggerMode = target.enable ? genicam_on : genicam_off;
-    }
-    return target;
+void
+SpinnakerCamera::update_input_trigger(Trigger& trigger) {
+    trigger.kind = Signal_Input;
+    trigger.enable = *(camera_->TriggerMode) == genicam_on;
+    trigger.line = to_trigger_line(*(camera_->TriggerSource));
+    trigger.edge = to_trigger_edge(*(camera_->TriggerActivation));
 }
 
-Trigger&
-SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target,
-                                                   const Trigger& last)
+void
+SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target)
 {
-    if (!is_equal(target, last)) {
-        camera_->LineSelector = genicam_line_1;
-        camera_->LineMode = genicam_output;
-        camera_->LineSource = genicam_exposure_active;
+    if (!is_equal(target, last_known_settings_.input_triggers.frame_start)) {
+        // Always disable trigger before any other configuration as in the
+        // Spinnaker Trigger.cpp example.
+        set_enum_property(camera_->TriggerMode, genicam_off);
+
+        set_enum_property(camera_->TriggerSelector, genicam_frame_start);
+        set_enum_property(camera_->TriggerSource, to_trigger_source(target.line));
+        set_enum_property(camera_->TriggerActivation, to_trigger_activation(target.edge));
+        set_enum_property(camera_->TriggerMode, target.enable ? genicam_on : genicam_off);
+
+        update_input_trigger(last_known_settings_.input_triggers.frame_start);
     }
-    return target;
+}
+
+void
+SpinnakerCamera::update_output_trigger_exposure(Trigger& trigger) {
+    trigger.kind = Signal_Output;
+    trigger.enable = *(camera_->LineSource) == genicam_exposure_active;
+    trigger.line = 1;
+    // TODO: check with Nathan if this is the expected edge.
+    trigger.edge = TriggerEdge_LevelHigh;
+}
+
+void
+SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target)
+{
+    if (!is_equal(target, last_known_settings_.output_triggers.exposure)) {
+        set_enum_property(camera_->LineSelector, genicam_line_1);
+        set_enum_property(camera_->LineMode, genicam_output);
+        set_enum_property(camera_->LineSource, genicam_exposure_active);
+        update_output_trigger_exposure(last_known_settings_.output_triggers.exposure);
+    }
 }
 
 void
@@ -535,23 +541,14 @@ SpinnakerCamera::get(struct CameraProperties* properties)
         },
     };
 
-    // Only reads frame_start input trigger if it currently configured.
+    // Only reads frame start input trigger if it currently configured.
     if (*(camera_->TriggerSelector) == genicam_frame_start) {
-        auto& trigger = properties->input_triggers.frame_start;
-        trigger.kind = Signal_Input;
-        trigger.enable = *(camera_->TriggerMode) == genicam_on;
-        trigger.line = to_trigger_line(*(camera_->TriggerSource));
-        trigger.edge = to_trigger_edge(*(camera_->TriggerActivation));
+        update_input_trigger(properties->input_triggers.frame_start);
     }
 
     // Only reads exposure output trigger if it currently configured on line 1.
     if (*(camera_->LineSelector) == genicam_line_1) {
-        auto& trigger = properties->output_triggers.exposure;
-        trigger.kind = Signal_Output;
-        trigger.enable = *(camera_->LineSource) == genicam_exposure_active;
-        trigger.line = 1;
-        // TODO: check with Nathan if this is the expected edge.
-        trigger.edge = TriggerEdge_LevelHigh;
+        update_output_trigger_exposure(properties->output_triggers.exposure);
     }
 
     last_known_settings_ = *properties;
@@ -561,19 +558,19 @@ void
 SpinnakerCamera::get_meta(struct CameraPropertyMetadata* meta) const
 {
     const std::scoped_lock lock(lock_);
-    query_exposure_time_capabilities_(meta);
+    query_exposure_time_capabilites(meta);
     // Not part of the Spinnaker API.
     meta->line_interval_us = { .writable = false };
     meta->readout_direction = { .writable = false };
-    query_binning_capabilities_(meta);
-    query_roi_offset_capabilities_(meta);
-    query_roi_shape_capabilities_(meta);
-    query_pixel_type_capabilities_(meta);
-    query_triggering_capabilities_(meta);
+    query_binning_capabilites(meta);
+    query_roi_offset_capabilites(meta);
+    query_roi_shape_capabilites(meta);
+    query_pixel_type_capabilites(meta);
+    query_triggering_capabilites(meta);
 }
 
 void
-SpinnakerCamera::query_exposure_time_capabilities_(
+SpinnakerCamera::query_exposure_time_capabilites(
   CameraPropertyMetadata* meta) const
 {
     meta->exposure_time_us = {
@@ -585,7 +582,7 @@ SpinnakerCamera::query_exposure_time_capabilities_(
 }
 
 void
-SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
+SpinnakerCamera::query_binning_capabilites(CameraPropertyMetadata* meta) const
 {
     // Spinnaker supports independent horizontal and vertical binning.
     // Assume horizontal is representative for now.
@@ -597,7 +594,7 @@ SpinnakerCamera::query_binning_capabilities_(CameraPropertyMetadata* meta) const
     };
 }
 void
-SpinnakerCamera::query_roi_offset_capabilities_(
+SpinnakerCamera::query_roi_offset_capabilites(
   CameraPropertyMetadata* meta) const
 {
     meta->offset = {
@@ -616,7 +613,7 @@ SpinnakerCamera::query_roi_offset_capabilities_(
     };
 }
 void
-SpinnakerCamera::query_roi_shape_capabilities_(
+SpinnakerCamera::query_roi_shape_capabilites(
   CameraPropertyMetadata* meta) const
 {
     meta->shape = {
@@ -636,7 +633,7 @@ SpinnakerCamera::query_roi_shape_capabilities_(
 }
 
 void
-SpinnakerCamera::query_pixel_type_capabilities_(
+SpinnakerCamera::query_pixel_type_capabilites(
   CameraPropertyMetadata* meta) const
 {
     meta->supported_pixel_types = 0;
@@ -649,7 +646,7 @@ SpinnakerCamera::query_pixel_type_capabilities_(
 }
 
 void
-SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
+SpinnakerCamera::query_triggering_capabilites(CameraPropertyMetadata* meta)
 {
     // These are based on inspection of blackfly camera properties in SpinView.
     // ExposureActive can be selected using the Trigger Selector in SpinView,
