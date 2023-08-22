@@ -162,9 +162,6 @@ set_int_property(Spinnaker::GenApi::IInteger & property, int64_t value)
     property = value;
 }
 
-// In general, Acquire uses single precision floats whereas Spinnaker uses double.
-// The desired value should be cast to double to match the precision of Spinnaker
-// so the clamped value is always in range and can be safely passed to Spinnaker.
 void
 set_float_property(Spinnaker::GenApi::IFloat & property, double value)
 {
@@ -696,7 +693,7 @@ SpinnakerCamera::start()
 {
     const std::scoped_lock lock(lock_);
     frame_id_ = 0;
-    camera_->AcquisitionMode = genicam_continuous;
+    set_enum_property(camera_->AcquisitionMode, genicam_continuous);
     camera_->BeginAcquisition();
 }
 
@@ -962,13 +959,7 @@ SpinnakerDriver::close(struct Device* in)
 void
 SpinnakerDriver::shutdown()
 {
-    // Acquire needs shutdown to be idempotent, but System::ReleaseInstance
-    // is not, so protect against a double release.
-    if (system_.IsValid()) {
-        // Possibly unneeded since this is a smart pointer, but this follows
-        // the Spinnaker examples.
-        system_->ReleaseInstance();
-    }
+    system_->ReleaseInstance();
 }
 
 } // end anonymous namespace
