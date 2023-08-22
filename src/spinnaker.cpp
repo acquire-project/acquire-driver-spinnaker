@@ -382,6 +382,13 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
         camera_->DeInit();
     }
     camera->Init();
+
+    // Acquire only supports certain values of some property values, so set these once
+    // on initialization before getting or setting any other properties which may
+    // depend on them.
+    set_enum_property(camera_->ExposureAuto, genicam_off);
+    set_enum_property(camera_->ExposureMode, genicam_timed);
+
     get(&last_known_settings_);
 }
 
@@ -415,11 +422,6 @@ void
 SpinnakerCamera::maybe_set_exposure_time_us(float target_us)
 {
     if (target_us != last_known_settings_.exposure_time_us) {
-        // Exposure configuration determines if exposure time is writable
-        // and its min and max values. Acquire only supports manually setting
-        // exposure time, so enforce that here.
-        set_enum_property(camera_->ExposureAuto, genicam_off);
-        set_enum_property(camera_->ExposureMode, genicam_timed);
         set_float_property(camera_->ExposureTime, (double)target_us);
         // TODO: may not need to actually get from camera because try_camera_set
         // in runtime/source.c calls get after calling set.
