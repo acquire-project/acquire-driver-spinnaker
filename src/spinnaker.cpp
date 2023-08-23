@@ -983,6 +983,9 @@ SpinnakerDriver::open(uint64_t device_id, struct Device** out)
     Spinnaker::CameraList camera_list = system_->GetCameras();
     Spinnaker::CameraPtr camera =
       camera_list.GetByIndex((unsigned int)device_id);
+    // TODO: SpinnakerCamera may partially initialize the camera
+    // and throw, so we may want a try/catch block here that deinits
+    // the camera if it was initialized.
     *out = (Device*)new SpinnakerCamera(camera);
 }
 
