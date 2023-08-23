@@ -131,50 +131,68 @@ to_trigger_source(uint8_t line)
     return trigger_line_to_source.at(line);
 }
 
+// Returns true if two triggers are equal in value, false otherwise.
 bool
 is_equal(const Trigger& lhs, const Trigger& rhs)
 {
     return memcmp(&lhs, &rhs, sizeof(Trigger)) == 0;
 }
 
-template<typename T>
+// Clamps a value to be in the closed interval [low, high].
+template <typename T>
 T
-clamp(T val, T low, T high)
+clamp(T value, T low, T high)
 {
-    if (val < low)
+    if (value < low)
         return low;
-    if (val > high)
+    if (value > high)
         return high;
-    return val;
+    return value;
+}
+
+// Returns true if a Spinnaker node is writable, false otherwise.
+bool
+check_node_writable(Spinnaker::GenApi::INode & node)
+{
+    if (!Spinnaker::GenApi::IsWritable(node)) {
+        LOGE("%s is not writable.", node.GetName().c_str());
+        return false;
+    }
+    return true;
+}
+
+// Various convenience Spinnaker node value setters.
+void
+set_enum_node(Spinnaker::GenApi::IEnumeration & node, const Spinnaker::GenICam::gcstring & value)
+{
+    if (check_node_writable(node)) {
+        node = value;
+    }
 }
 
 void
-set_enum_property(Spinnaker::GenApi::IEnumeration & property, const Spinnaker::GenICam::gcstring & value)
+set_int_node(Spinnaker::GenApi::IInteger & node, int64_t value)
 {
-    EXPECT(IsWritable(property), "Spinnaker property %s is not writable.", property.GetName().c_str());
-    property = value;
+    if (check_node_writable(node)) {
+        const int64_t min = node.GetMin();
+        const int64_t max = node.GetMax();
+        value = clamp(value, min, max);
+        node = value;
+    }
 }
 
 void
-set_int_property(Spinnaker::GenApi::IInteger & property, int64_t value)
+set_float_property(Spinnaker::GenApi::IFloat & node, double value)
 {
-    EXPECT(IsWritable(property), "Spinnaker property %s is not writable.", property.GetName().c_str());
-    const int64_t min = property.GetMin();
-    const int64_t max = property.GetMax();
-    value = clamp(value, min, max);
-    property = value;
+    if (check_node_writable(node)) {
+        const double min = node.GetMin();
+        const double max = node.GetMax();
+        value = clamp(value, min, max);
+        node = value;
+    }
 }
 
-void
-set_float_property(Spinnaker::GenApi::IFloat & property, double value)
-{
-    EXPECT(IsWritable(property), "Spinnaker property %s is not writable.", property.GetName().c_str());
-    const double min = property.GetMin();
-    const double max = property.GetMax();
-    value = clamp(value, min, max);
-    property = value;
-}
-
+// Check that a cast from Acquire's camera ID is appropriate for Spinnaker.
 void
 check_spinnaker_camera_id(uint64_t id)
 {
@@ -394,8 +412,8 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
     // Acquire only supports certain values of some property values, so set these once
     // on initialization before getting or setting any other properties which may
     // depend on them.
-    set_enum_property(camera_->ExposureAuto, genicam_off);
-    set_enum_property(camera_->ExposureMode, genicam_timed);
+    set_enum_node(camera_->ExposureAuto, genicam_off);
+    set_enum_node(camera_->ExposureMode, genicam_timed);
 
     get(&last_known_settings_);
 }
@@ -441,8 +459,8 @@ void
 SpinnakerCamera::maybe_set_binning(uint8_t target)
 {
     if (target != last_known_settings_.binning) {
-        set_int_property(camera_->BinningHorizontal, (int64_t)target);
-        set_int_property(camera_->BinningVertical, (int64_t)target);
+        set_int_node(camera_->BinningHorizontal, (int64_t)target);
+        set_int_node(camera_->BinningVertical, (int64_t)target);
         last_known_settings_.binning = (float)camera_->BinningHorizontal();
     }
 }
@@ -452,7 +470,7 @@ SpinnakerCamera::maybe_set_sample_type(SampleType target)
 {
     CHECK(target < SampleTypeCount);
     if (target != last_known_settings_.pixel_type) {
-        set_enum_property(camera_->PixelFormat, to_pixel_format(target));
+        set_enum_node(camera_->PixelFormat, to_pixel_format(target));
         last_known_settings_.pixel_type = to_sample_type(*(camera_->PixelFormat));
     }
 }
@@ -462,11 +480,11 @@ SpinnakerCamera::maybe_set_offset(CameraProperties::camera_properties_offset_s t
 {
     CameraProperties::camera_properties_offset_s & last = last_known_settings_.offset;
     if (target.x != last.x) {
-        set_int_property(camera_->OffsetX, (int64_t)target.x);
+        set_int_node(camera_->OffsetX, (int64_t)target.x);
         last.x = (uint32_t)camera_->OffsetX();
     }
     if (target.y != last.y) {
-        set_int_property(camera_->OffsetY, (int64_t)target.y);
+        set_int_node(camera_->OffsetY, (int64_t)target.y);
         last.y = (uint32_t)camera_->OffsetY();
     }
 }
@@ -476,11 +494,11 @@ SpinnakerCamera::maybe_set_shape(CameraProperties::camera_properties_shape_s tar
 {
     CameraProperties::camera_properties_shape_s & last = last_known_settings_.shape;
     if (target.x != last.x) {
-        set_int_property(camera_->Width, (int64_t)target.x);
+        set_int_node(camera_->Width, (int64_t)target.x);
         last.x = (uint32_t)camera_->Width();
     }
     if (target.y != last.y) {
-        set_int_property(camera_->Height, (int64_t)target.y);
+        set_int_node(camera_->Height, (int64_t)target.y);
         last.y = (uint32_t)camera_->Height();
     }
 }
@@ -499,12 +517,12 @@ SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target)
     if (!is_equal(target, last_known_settings_.input_triggers.frame_start)) {
         // Always disable trigger before any other configuration as in the
         // Spinnaker Trigger.cpp example.
-        set_enum_property(camera_->TriggerMode, genicam_off);
+        set_enum_node(camera_->TriggerMode, genicam_off);
 
-        set_enum_property(camera_->TriggerSelector, genicam_frame_start);
-        set_enum_property(camera_->TriggerSource, to_trigger_source(target.line));
-        set_enum_property(camera_->TriggerActivation, to_trigger_activation(target.edge));
-        set_enum_property(camera_->TriggerMode, target.enable ? genicam_on : genicam_off);
+        set_enum_node(camera_->TriggerSelector, genicam_frame_start);
+        set_enum_node(camera_->TriggerSource, to_trigger_source(target.line));
+        set_enum_node(camera_->TriggerActivation, to_trigger_activation(target.edge));
+        set_enum_node(camera_->TriggerMode, target.enable ? genicam_on : genicam_off);
 
         update_input_trigger(last_known_settings_.input_triggers.frame_start);
     }
@@ -523,9 +541,9 @@ void
 SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target)
 {
     if (!is_equal(target, last_known_settings_.output_triggers.exposure)) {
-        set_enum_property(camera_->LineSelector, genicam_line_1);
-        set_enum_property(camera_->LineMode, genicam_output);
-        set_enum_property(camera_->LineSource, genicam_exposure_active);
+        set_enum_node(camera_->LineSelector, genicam_line_1);
+        set_enum_node(camera_->LineMode, genicam_output);
+        set_enum_node(camera_->LineSource, genicam_exposure_active);
         update_output_trigger_exposure(last_known_settings_.output_triggers.exposure);
     }
 }
@@ -703,7 +721,7 @@ SpinnakerCamera::start()
 {
     const std::scoped_lock lock(lock_);
     frame_id_ = 0;
-    set_enum_property(camera_->AcquisitionMode, genicam_continuous);
+    set_enum_node(camera_->AcquisitionMode, genicam_continuous);
     camera_->BeginAcquisition();
     started_ = true;
 }
