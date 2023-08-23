@@ -182,7 +182,7 @@ set_int_node(Spinnaker::GenApi::IInteger & node, int64_t value)
 }
 
 void
-set_float_property(Spinnaker::GenApi::IFloat & node, double value)
+set_float_node(Spinnaker::GenApi::IFloat & node, double value)
 {
     if (check_node_writable(node)) {
         const double min = node.GetMin();
@@ -231,7 +231,7 @@ struct SpinnakerCamera final : private Camera
     // True if the camera has been started, false otherwise.
     bool started_;
     // Setting properties on the device may be expensive, so these are
-    // used to avoid doing so when a property value is unchanged.
+    // used to avoid doing so when a value is unchanged.
     struct CameraProperties last_known_settings_;
 
     void query_exposure_time_capabilites(CameraPropertyMetadata* meta) const;
@@ -409,8 +409,8 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
     }
     camera->Init();
 
-    // Acquire only supports certain values of some property values, so set these once
-    // on initialization before getting or setting any other properties which may
+    // Acquire only supports certain values of some node values, so set these once
+    // on initialization before getting or setting any other node values which may
     // depend on them.
     set_enum_node(camera_->ExposureAuto, genicam_off);
     set_enum_node(camera_->ExposureMode, genicam_timed);
@@ -448,7 +448,7 @@ void
 SpinnakerCamera::maybe_set_exposure_time_us(float target_us)
 {
     if (target_us != last_known_settings_.exposure_time_us) {
-        set_float_property(camera_->ExposureTime, (double)target_us);
+        set_float_node(camera_->ExposureTime, (double)target_us);
         // TODO: may not need to actually get from camera because try_camera_set
         // in runtime/source.c calls get after calling set.
         last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
