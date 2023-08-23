@@ -49,14 +49,13 @@ const Spinnaker::GenICam::gcstring genicam_continuous("Continuous");
 const Spinnaker::GenICam::gcstring genicam_timed("Timed");
 
 // Inverse map lookup that returns a default key if the value is not found.
-template <typename T>
+template<typename T>
 T
-inv_at_or(
-    const std::unordered_map<T, Spinnaker::GenICam::gcstring> & table,
-    const Spinnaker::GenICam::gcstring & value,
-    const T default_key)
+inv_at_or(const std::unordered_map<T, Spinnaker::GenICam::gcstring>& table,
+          const Spinnaker::GenICam::gcstring& value,
+          const T default_key)
 {
-    for (const auto & [k, v] : table) {
+    for (const auto& [k, v] : table) {
         if (v == value) {
             return k;
         }
@@ -65,45 +64,45 @@ inv_at_or(
 }
 
 // Maps Acquire trigger edges to GenICam activation strings.
-const std::unordered_map<TriggerEdge, Spinnaker::GenICam::gcstring> trigger_edge_to_activation{
-    { TriggerEdge_Rising, "RisingEdge" },
-    { TriggerEdge_Falling, "FallingEdge" },
-    { TriggerEdge_AnyEdge, "AnyEdge" },
-    { TriggerEdge_LevelHigh, "LevelHigh" },
-    { TriggerEdge_LevelLow, "LevelLow" },
-};
+const std::unordered_map<TriggerEdge, Spinnaker::GenICam::gcstring>
+  trigger_edge_to_activation{
+      { TriggerEdge_Rising, "RisingEdge" },
+      { TriggerEdge_Falling, "FallingEdge" },
+      { TriggerEdge_AnyEdge, "AnyEdge" },
+      { TriggerEdge_LevelHigh, "LevelHigh" },
+      { TriggerEdge_LevelLow, "LevelLow" },
+  };
 
 TriggerEdge
-to_trigger_edge(const Spinnaker::GenICam::gcstring & activation)
+to_trigger_edge(const Spinnaker::GenICam::gcstring& activation)
 {
-    return inv_at_or(trigger_edge_to_activation, activation, TriggerEdge_Unknown);
+    return inv_at_or(
+      trigger_edge_to_activation, activation, TriggerEdge_Unknown);
 }
 
-const Spinnaker::GenICam::gcstring &
+const Spinnaker::GenICam::gcstring&
 to_trigger_activation(TriggerEdge edge)
 {
     return trigger_edge_to_activation.at(edge);
 }
 
 // Maps Acquire sample types to GenICam pixel format strings.
-const std::unordered_map<SampleType, Spinnaker::GenICam::gcstring> sample_type_to_pixel_format{
-    { SampleType_u8, "Mono8" },
-    { SampleType_i8, "Mono8s" },
-    { SampleType_u10, "Mono10" },
-    { SampleType_u12, "Mono12" },
-    { SampleType_u14, "Mono14" },
-    { SampleType_u16, "Mono16" },
-    { SampleType_i16, "Mono16s" },
-    { SampleType_f32, "Mono32f" },
-};
+const std::unordered_map<SampleType, Spinnaker::GenICam::gcstring>
+  sample_type_to_pixel_format{
+      { SampleType_u8, "Mono8" },    { SampleType_i8, "Mono8s" },
+      { SampleType_u10, "Mono10" },  { SampleType_u12, "Mono12" },
+      { SampleType_u14, "Mono14" },  { SampleType_u16, "Mono16" },
+      { SampleType_i16, "Mono16s" }, { SampleType_f32, "Mono32f" },
+  };
 
 SampleType
-to_sample_type(const Spinnaker::GenICam::gcstring & pixel_format)
+to_sample_type(const Spinnaker::GenICam::gcstring& pixel_format)
 {
-    return inv_at_or(sample_type_to_pixel_format, pixel_format, SampleType_Unknown);
+    return inv_at_or(
+      sample_type_to_pixel_format, pixel_format, SampleType_Unknown);
 }
 
-const Spinnaker::GenICam::gcstring &
+const Spinnaker::GenICam::gcstring&
 to_pixel_format(SampleType sample_type)
 {
     return sample_type_to_pixel_format.at(sample_type);
@@ -112,20 +111,21 @@ to_pixel_format(SampleType sample_type)
 // Maps Acquire line numbers to GenICam line source strings.
 // Define the software line as acquire's line 2 because the Blackfly USB3 camera
 // only has two physical lines (0 and 1).
-const std::unordered_map<uint8_t, Spinnaker::GenICam::gcstring> trigger_line_to_source{
-    {0, "Line0"},
-    {1, "Line1"},
-    {2, "Software"},
-};
+const std::unordered_map<uint8_t, Spinnaker::GenICam::gcstring>
+  trigger_line_to_source{
+      { 0, "Line0" },
+      { 1, "Line1" },
+      { 2, "Software" },
+  };
 
 uint8_t
-to_trigger_line(const Spinnaker::GenICam::gcstring & source)
+to_trigger_line(const Spinnaker::GenICam::gcstring& source)
 {
     // Acquire's line 3 is unassigned here so use it for an unknown line.
     return inv_at_or<uint8_t>(trigger_line_to_source, source, 3);
 }
 
-const Spinnaker::GenICam::gcstring &
+const Spinnaker::GenICam::gcstring&
 to_trigger_source(uint8_t line)
 {
     return trigger_line_to_source.at(line);
@@ -139,7 +139,7 @@ is_equal(const Trigger& lhs, const Trigger& rhs)
 }
 
 // Clamps a value to be in the closed interval [low, high].
-template <typename T>
+template<typename T>
 T
 clamp(T value, T low, T high)
 {
@@ -152,7 +152,7 @@ clamp(T value, T low, T high)
 
 // Returns true if a Spinnaker node is writable, false otherwise.
 bool
-check_node_writable(Spinnaker::GenApi::INode & node)
+check_node_writable(Spinnaker::GenApi::INode& node)
 {
     if (!Spinnaker::GenApi::IsWritable(node)) {
         LOGE("%s is not writable.", node.GetName().c_str());
@@ -163,7 +163,8 @@ check_node_writable(Spinnaker::GenApi::INode & node)
 
 // Various convenience Spinnaker node value setters.
 void
-set_enum_node(Spinnaker::GenApi::IEnumeration & node, const Spinnaker::GenICam::gcstring & value)
+set_enum_node(Spinnaker::GenApi::IEnumeration& node,
+              const Spinnaker::GenICam::gcstring& value)
 {
     if (check_node_writable(node)) {
         node = value;
@@ -171,7 +172,7 @@ set_enum_node(Spinnaker::GenApi::IEnumeration & node, const Spinnaker::GenICam::
 }
 
 void
-set_int_node(Spinnaker::GenApi::IInteger & node, int64_t value)
+set_int_node(Spinnaker::GenApi::IInteger& node, int64_t value)
 {
     if (check_node_writable(node)) {
         const int64_t min = node.GetMin();
@@ -182,7 +183,7 @@ set_int_node(Spinnaker::GenApi::IInteger & node, int64_t value)
 }
 
 void
-set_float_node(Spinnaker::GenApi::IFloat & node, double value)
+set_float_node(Spinnaker::GenApi::IFloat& node, double value)
 {
     if (check_node_writable(node)) {
         const double min = node.GetMin();
@@ -404,14 +405,15 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
     // Ideally, we would error here, but that can make the camera indefinitely
     // unusable in Acquire, so log and reset instead.
     if (camera->IsInitialized()) {
-        LOGE("Camera was already initialized. De-initializing it before re-initializing.");
+        LOGE("Camera was already initialized. De-initializing it before "
+             "re-initializing.");
         camera_->DeInit();
     }
     camera->Init();
 
-    // Acquire only supports certain values of some node values, so set these once
-    // on initialization before getting or setting any other node values which may
-    // depend on them.
+    // Acquire only supports certain values of some node values, so set these
+    // once on initialization before getting or setting any other node values
+    // which may depend on them.
     set_enum_node(camera_->ExposureAuto, genicam_off);
     set_enum_node(camera_->ExposureMode, genicam_timed);
 
@@ -471,14 +473,17 @@ SpinnakerCamera::maybe_set_sample_type(SampleType target)
     CHECK(target < SampleTypeCount);
     if (target != last_known_settings_.pixel_type) {
         set_enum_node(camera_->PixelFormat, to_pixel_format(target));
-        last_known_settings_.pixel_type = to_sample_type(*(camera_->PixelFormat));
+        last_known_settings_.pixel_type =
+          to_sample_type(*(camera_->PixelFormat));
     }
 }
 
 void
-SpinnakerCamera::maybe_set_offset(CameraProperties::camera_properties_offset_s target)
+SpinnakerCamera::maybe_set_offset(
+  CameraProperties::camera_properties_offset_s target)
 {
-    CameraProperties::camera_properties_offset_s & last = last_known_settings_.offset;
+    CameraProperties::camera_properties_offset_s& last =
+      last_known_settings_.offset;
     if (target.x != last.x) {
         set_int_node(camera_->OffsetX, (int64_t)target.x);
         last.x = (uint32_t)camera_->OffsetX();
@@ -490,9 +495,11 @@ SpinnakerCamera::maybe_set_offset(CameraProperties::camera_properties_offset_s t
 }
 
 void
-SpinnakerCamera::maybe_set_shape(CameraProperties::camera_properties_shape_s target)
+SpinnakerCamera::maybe_set_shape(
+  CameraProperties::camera_properties_shape_s target)
 {
-    CameraProperties::camera_properties_shape_s & last = last_known_settings_.shape;
+    CameraProperties::camera_properties_shape_s& last =
+      last_known_settings_.shape;
     if (target.x != last.x) {
         set_int_node(camera_->Width, (int64_t)target.x);
         last.x = (uint32_t)camera_->Width();
@@ -504,7 +511,8 @@ SpinnakerCamera::maybe_set_shape(CameraProperties::camera_properties_shape_s tar
 }
 
 void
-SpinnakerCamera::update_input_trigger(Trigger& trigger) {
+SpinnakerCamera::update_input_trigger(Trigger& trigger)
+{
     trigger.kind = Signal_Input;
     trigger.enable = *(camera_->TriggerMode) == genicam_on;
     trigger.line = to_trigger_line(*(camera_->TriggerSource));
@@ -521,15 +529,18 @@ SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target)
 
         set_enum_node(camera_->TriggerSelector, genicam_frame_start);
         set_enum_node(camera_->TriggerSource, to_trigger_source(target.line));
-        set_enum_node(camera_->TriggerActivation, to_trigger_activation(target.edge));
-        set_enum_node(camera_->TriggerMode, target.enable ? genicam_on : genicam_off);
+        set_enum_node(camera_->TriggerActivation,
+                      to_trigger_activation(target.edge));
+        set_enum_node(camera_->TriggerMode,
+                      target.enable ? genicam_on : genicam_off);
 
         update_input_trigger(last_known_settings_.input_triggers.frame_start);
     }
 }
 
 void
-SpinnakerCamera::update_output_trigger_exposure(Trigger& trigger) {
+SpinnakerCamera::update_output_trigger_exposure(Trigger& trigger)
+{
     trigger.kind = Signal_Output;
     trigger.enable = *(camera_->LineSource) == genicam_exposure_active;
     trigger.line = 1;
@@ -544,7 +555,8 @@ SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target)
         set_enum_node(camera_->LineSelector, genicam_line_1);
         set_enum_node(camera_->LineMode, genicam_output);
         set_enum_node(camera_->LineSource, genicam_exposure_active);
-        update_output_trigger_exposure(last_known_settings_.output_triggers.exposure);
+        update_output_trigger_exposure(
+          last_known_settings_.output_triggers.exposure);
     }
 }
 
@@ -638,8 +650,7 @@ SpinnakerCamera::query_roi_offset_capabilites(
     };
 }
 void
-SpinnakerCamera::query_roi_shape_capabilites(
-  CameraPropertyMetadata* meta) const
+SpinnakerCamera::query_roi_shape_capabilites(CameraPropertyMetadata* meta) const
 {
     meta->shape = {
         .x = {
@@ -756,14 +767,15 @@ void
 SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 {
     // Adapted from the Acquisition.cpp example distributed with the Spinnaker
-    // SDK. Cannot acquire the lock here because GetNextImage may await a trigger
-    // indefinitely effectively causing a deadlock with other methods that acquire
-    // the camera lock (like stop).
+    // SDK. Cannot acquire the lock here because GetNextImage may await a
+    // trigger indefinitely effectively causing a deadlock with other methods
+    // that acquire the camera lock (like stop).
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
 
-    // Acquire the lock once we have the frame so that we can check if the camera
-    // was stopped while we were waiting. In that case, the frame is not valid
-    // and its buffer backed memory has been released, so return witout releasing.
+    // Acquire the lock once we have the frame so that we can check if the
+    // camera was stopped while we were waiting. In that case, the frame is not
+    // valid and its buffer backed memory has been released, so return witout
+    // releasing.
     const std::scoped_lock lock(lock_);
     if (!started_) {
         return;
@@ -806,7 +818,8 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     }
 
     // Possibly unneeded, but we manually release as instructed in the Spinnaker
-    // Acquistion.cpp example because this image was retrieved directly from the camera.
+    // Acquistion.cpp example because this image was retrieved directly from the
+    // camera.
     frame->Release();
 }
 
@@ -930,7 +943,8 @@ SpinnakerDriver::SpinnakerDriver()
 {
 }
 
-SpinnakerDriver::~SpinnakerDriver() {
+SpinnakerDriver::~SpinnakerDriver()
+{
     try {
         shutdown();
     } catch (const std::exception& exc) {
