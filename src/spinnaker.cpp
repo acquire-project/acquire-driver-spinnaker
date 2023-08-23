@@ -48,21 +48,23 @@ const Spinnaker::GenICam::gcstring genicam_exposure_active("ExposureActive");
 const Spinnaker::GenICam::gcstring genicam_continuous("Continuous");
 const Spinnaker::GenICam::gcstring genicam_timed("Timed");
 
+// Inverse map lookup that returns a default key if the value is not found.
 template <typename T>
 T
 inv_at_or(
     const std::unordered_map<T, Spinnaker::GenICam::gcstring> & table,
     const Spinnaker::GenICam::gcstring & value,
-    const T default_result)
+    const T default_key)
 {
     for (const auto & [k, v] : table) {
         if (v == value) {
             return k;
         }
     }
-    return default_result;
+    return default_key;
 }
 
+// Maps Acquire trigger edges to GenICam activation strings.
 const std::unordered_map<TriggerEdge, Spinnaker::GenICam::gcstring> trigger_edge_to_activation{
     { TriggerEdge_Rising, "RisingEdge" },
     { TriggerEdge_Falling, "FallingEdge" },
@@ -83,6 +85,7 @@ to_trigger_activation(TriggerEdge edge)
     return trigger_edge_to_activation.at(edge);
 }
 
+// Maps Acquire sample types to GenICam pixel format strings.
 const std::unordered_map<SampleType, Spinnaker::GenICam::gcstring> sample_type_to_pixel_format{
     { SampleType_u8, "Mono8" },
     { SampleType_i8, "Mono8s" },
@@ -106,10 +109,9 @@ to_pixel_format(SampleType sample_type)
     return sample_type_to_pixel_format.at(sample_type);
 }
 
+// Maps Acquire line numbers to GenICam line source strings.
 // Define the software line as acquire's line 2 because the Blackfly USB3 camera
 // only has two physical lines (0 and 1).
-// Similarly define acquire's line 3 as unknown.
-
 const std::unordered_map<uint8_t, Spinnaker::GenICam::gcstring> trigger_line_to_source{
     {0, "Line0"},
     {1, "Line1"},
@@ -119,6 +121,7 @@ const std::unordered_map<uint8_t, Spinnaker::GenICam::gcstring> trigger_line_to_
 uint8_t
 to_trigger_line(const Spinnaker::GenICam::gcstring & source)
 {
+    // Acquire's line 3 is unassigned here so use it for an unknown line.
     return inv_at_or<uint8_t>(trigger_line_to_source, source, 3);
 }
 
@@ -198,12 +201,17 @@ struct SpinnakerCamera final : private Camera
     void get_frame(void* im, size_t* nbytes, struct ImageInfo* info);
 
   private:
-    // Guards access to camera_.
+    // Guards access to all private state.
     mutable std::mutex lock_;
     // Used as a concise way to get and set a Spinnaker camera's state,
     // rather than through its GenICam node map.
     Spinnaker::CameraPtr camera_;
+    // Frame ID that starts at 0 each time the camera is started and
+    // increments for each frame retrieved.
+    // TODO: could use Spinnaker::Image::GetFrameID instead?
     uint64_t frame_id_;
+    // True if the camera has been started, false otherwise.
+    bool started_;
     // Setting properties on the device may be expensive, so these are
     // used to avoid doing so when a property value is unchanged.
     struct CameraProperties last_known_settings_;
@@ -372,13 +380,13 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   , camera_(camera)
   , last_known_settings_{}
   , frame_id_(0)
+  , started_(false)
 {
     // Sometimes the camera is still initialized even after running CameraBase::DeInit
     // Ideally, we would error here, but that can make the camera indefinitely unusable
-    // in Acquire, so log and try to recover instead.
+    // in Acquire, so log and reset instead.
     if (camera->IsInitialized()) {
-        LOGE("Camera was already initialized. Stopping and de-initializing it before initialization.");
-        stop();
+        LOGE("Camera was already initialized. De-initializing it before re-initializing.");
         camera_->DeInit();
     }
     camera->Init();
@@ -507,7 +515,7 @@ SpinnakerCamera::update_output_trigger_exposure(Trigger& trigger) {
     trigger.kind = Signal_Output;
     trigger.enable = *(camera_->LineSource) == genicam_exposure_active;
     trigger.line = 1;
-    // TODO: check with Nathan if this is the expected edge.
+    // TODO: check if this is the expected edge type for exposure active.
     trigger.edge = TriggerEdge_LevelHigh;
 }
 
@@ -697,6 +705,7 @@ SpinnakerCamera::start()
     frame_id_ = 0;
     set_enum_property(camera_->AcquisitionMode, genicam_continuous);
     camera_->BeginAcquisition();
+    started_ = true;
 }
 
 void
@@ -708,8 +717,13 @@ SpinnakerCamera::stop()
     if (IsWritable(camera_->TriggerMode)) {
         camera_->TriggerMode = genicam_off;
     }
-    if (camera_->IsStreaming()) {
+    // Could possibly use camera_->IsStreaming instead, but the Spinnaker
+    // docs are not clear enough about what that means. It's critical
+    // that we call EndAcquisiton exactly when needed so that associated
+    // buffers are freed.
+    if (started_) {
         camera_->EndAcquisition();
+        started_ = false;
     }
 }
 
@@ -724,15 +738,18 @@ void
 SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 {
     // Adapted from the Acquisition.cpp example distributed with the Spinnaker
-    // SDK. Cannot acquire the camera lock here because GetNextImage may await
-    // a trigger indefinitely effectively causing a deadlock with other methods
-    // that acquire the camera lock (like stop).
+    // SDK. Cannot acquire the lock here because GetNextImage may await a trigger
+    // indefinitely effectively causing a deadlock with other methods that acquire
+    // the camera lock (like stop).
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
 
-    // No need to acquire the camera lock after getting the image because we
-    // do not access the Spinnaker camera API from here (only the image) and
-    // frame_id_ does not need to be guarded due to other ordering that
-    // acquire guarantees.
+    // Acquire the lock once we have the frame so that we can check if the camera
+    // was stopped while we were waiting. In that case, the frame is not valid
+    // and its buffer backed memory has been released, so return witout releasing.
+    const std::scoped_lock lock(lock_);
+    if (!started_) {
+        return;
+    }
 
     if (frame->IsIncomplete()) {
         LOGE(
