@@ -773,9 +773,9 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     Spinnaker::ImagePtr frame = camera_->GetNextImage();
 
     // Acquire the lock once we have the frame so that we can check if the
-    // camera was stopped while we were waiting. In that case, the frame is not
-    // valid and its buffer backed memory has been released, so return witout
-    // releasing.
+    // camera was stopped while we were waiting. In the case that stop was
+    // called before we got here, the frame is not valid and its buffer backed
+    // memory has been released, so return without explicitly releasing.
     const std::scoped_lock lock(lock_);
     if (!started_) {
         return;
