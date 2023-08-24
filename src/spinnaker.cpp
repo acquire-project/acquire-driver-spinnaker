@@ -580,7 +580,7 @@ SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target)
     if (!is_equal(target, last_known_settings_.output_triggers.exposure)) {
         set_enum_node(camera_->LineSelector, genicam_line_1);
         set_enum_node(camera_->LineMode, genicam_output);
-        set_enum_node(camera_->LineSource, genicam_exposure_active);
+        set_enum_node(camera_->LineSource, target.enable ? genicam_exposure_active : genicam_off);
         update_output_trigger_exposure(
           last_known_settings_.output_triggers.exposure);
     }
