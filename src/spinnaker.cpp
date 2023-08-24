@@ -193,6 +193,21 @@ set_float_node(Spinnaker::GenApi::IFloat& node, double value)
     }
 }
 
+// Returns a representative Spinnaker binning node.
+// Spinnaker supports independent horizontal and vertical binning, but
+// Acquire only supports one binning value.
+Spinnaker::GenApi::IInteger&
+get_binning_node(const Spinnaker::CameraPtr& camera)
+{
+    // Favor a writable node if present.
+    Spinnaker::GenApi::IInteger& binning = camera->BinningVertical;
+    if (!IsWritable(camera->BinningVertical) &&
+        IsWritable(camera->BinningHorizontal)) {
+        binning = camera->BinningHorizontal;
+    }
+    return binning;
+}
+
 // Check that a cast from Acquire's camera ID is appropriate for Spinnaker.
 void
 check_spinnaker_camera_id(uint64_t id)
@@ -461,9 +476,17 @@ void
 SpinnakerCamera::maybe_set_binning(uint8_t target)
 {
     if (target != last_known_settings_.binning) {
-        set_int_node(camera_->BinningHorizontal, (int64_t)target);
-        set_int_node(camera_->BinningVertical, (int64_t)target);
-        last_known_settings_.binning = (float)camera_->BinningHorizontal();
+        // Only one of horizontal and vertical may be writable, so explicitly
+        // check each before attempting to write.
+        // TODO: should we error/log if neither is writable?
+        if (IsWritable(camera_->BinningHorizontal)) {
+            set_int_node(camera_->BinningHorizontal, (int64_t)target);
+        }
+        if (IsWritable(camera_->BinningVertical)) {
+            set_int_node(camera_->BinningVertical, (int64_t)target);
+        }
+        Spinnaker::GenApi::IInteger& binning = get_binning_node(camera_);
+        last_known_settings_.binning = (float)binning();
     }
 }
 
@@ -564,9 +587,10 @@ void
 SpinnakerCamera::get(struct CameraProperties* properties)
 {
     const std::scoped_lock lock(lock_);
+    Spinnaker::GenApi::IInteger& binning = get_binning_node(camera_);
     *properties = {
         .exposure_time_us = (float)camera_->ExposureTime(),
-        .binning = (uint8_t)camera_->BinningHorizontal(),
+        .binning = (uint8_t)binning(),
         .pixel_type = to_sample_type(*(camera_->PixelFormat)),
         .offset = {
           .x = (uint32_t)camera_->OffsetX(),
@@ -621,12 +645,11 @@ SpinnakerCamera::query_exposure_time_capabilites(
 void
 SpinnakerCamera::query_binning_capabilites(CameraPropertyMetadata* meta) const
 {
-    // Spinnaker supports independent horizontal and vertical binning.
-    // Assume horizontal is representative for now.
+    Spinnaker::GenApi::IInteger& binning = get_binning_node(camera_);
     meta->binning = {
-        .writable = IsWritable(camera_->BinningHorizontal),
-        .low = (float)camera_->BinningHorizontal.GetMin(),
-        .high = (float)camera_->BinningHorizontal.GetMax(),
+        .writable = IsWritable(binning),
+        .low = (float)binning.GetMin(),
+        .high = (float)binning.GetMax(),
         .type = PropertyType_FixedPrecision,
     };
 }

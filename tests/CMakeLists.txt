@@ -18,6 +18,7 @@ else()
                 one-video-stream
                 repeat-start
                 repeat-start-no-stop
+                configure-properties
                 configure-triggering
                 abort-while-waiting-for-trigger
         )
