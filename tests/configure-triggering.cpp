@@ -105,7 +105,19 @@ main()
             CHECK(props.video[0]
                     .camera.settings.input_triggers.frame_start.enable == 0);
 
-            // Re-enable frame start input trigger on line 0.
+            // Enable frame start input trigger on as a software trigger.
+            props.video[0].camera.settings.input_triggers.frame_start.line = 2;
+            props.video[0].camera.settings.input_triggers.frame_start.enable =
+              1;
+            OK(acquire_configure(runtime, &props));
+            CHECK(
+              props.video[0].camera.settings.input_triggers.frame_start.line ==
+              2);
+            CHECK(props.video[0]
+                    .camera.settings.input_triggers.frame_start.enable == 1);
+
+            // Enable frame start input trigger on line 0.
+            props.video[0].camera.settings.input_triggers.frame_start.line = 0;
             props.video[0].camera.settings.input_triggers.frame_start.enable =
               1;
             OK(acquire_configure(runtime, &props));
@@ -127,7 +139,7 @@ main()
             CHECK(dm);
 
             AcquireProperties props = {};
-            AcquirePropertyMetadata meta = {};
+            AcquirePropertyMetadata metadata = {};
 
             DEVOK(device_manager_select(dm,
                                         DeviceKind_Camera,
@@ -139,7 +151,7 @@ main()
                                         &props.video[0].storage.identifier));
 
             OK(acquire_configure(runtime, &props));
-            OK(acquire_get_configuration_metadata(runtime, &meta));
+            OK(acquire_get_configuration_metadata(runtime, &metadata));
 
             CHECK(props.video[0]
                     .camera.settings.input_triggers.frame_start.enable == 0);
