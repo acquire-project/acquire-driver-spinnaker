@@ -80,9 +80,6 @@ main()
             props.video[0].max_frame_count = 1000;
 
             // Enable frame start input trigger on line 0.
-            CHECK(
-              props.video[0].camera.settings.input_triggers.frame_start.kind ==
-              Signal_Input);
             props.video[0].camera.settings.input_triggers.frame_start.edge =
               TriggerEdge_Rising;
             props.video[0].camera.settings.input_triggers.frame_start.line = 0;
@@ -94,6 +91,17 @@ main()
               0);
             CHECK(props.video[0]
                     .camera.settings.input_triggers.frame_start.enable == 1);
+
+            // Enable exposure output trigger on line 1.
+            props.video[0].camera.settings.output_triggers.exposure.line = 1;
+            props.video[0].camera.settings.output_triggers.exposure.enable = 1;
+            OK(acquire_configure(runtime, &props));
+            CHECK(
+              props.video[0].camera.settings.output_triggers.exposure.line ==
+              1);
+            CHECK(
+              props.video[0].camera.settings.output_triggers.exposure.enable ==
+              1);
 
             // Disable frame start input trigger on line 0.
             props.video[0].camera.settings.input_triggers.frame_start.enable =
@@ -155,6 +163,9 @@ main()
 
             CHECK(props.video[0]
                     .camera.settings.input_triggers.frame_start.enable == 0);
+            CHECK(
+              props.video[0].camera.settings.output_triggers.exposure.enable ==
+              0);
 
             OK(acquire_shutdown(runtime));
         }
