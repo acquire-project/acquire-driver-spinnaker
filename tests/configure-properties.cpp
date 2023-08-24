@@ -77,7 +77,10 @@ main()
         AcquirePropertyMetadata metadata = { 0 };
         OK(acquire_get_configuration_metadata(runtime, &metadata));
 
-        // TODO: exposure time is tricky.
+        // After this tests passes, the camera should have reasonable
+        // default property values.
+
+        // TODO: exposure time is tricky :(
         // props.video[0].camera.settings.exposure_time_us = 200;
         // OK(acquire_configure(runtime, &props));
         // ASSERT_EQ(float, "%f",
@@ -106,6 +109,28 @@ main()
                   "%d",
                   props.video[0].camera.settings.pixel_type,
                   SampleType_u8);
+
+        // Shape and offset are coupled since certain combinations are not valid
+        // given the fixed sensor size.
+        props.video[0].camera.settings.shape = { .x = 32, .y = 16 };
+        OK(acquire_configure(runtime, &props));
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 32);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 16);
+
+        props.video[0].camera.settings.offset = { .x = 64, .y = 42 };
+        OK(acquire_configure(runtime, &props));
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.x, 64);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.y, 42);
+
+        props.video[0].camera.settings.offset = { .x = 0, .y = 0 };
+        OK(acquire_configure(runtime, &props));
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.x, 0);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.y, 0);
+
+        props.video[0].camera.settings.shape = { .x = 1920, .y = 1200 };
+        OK(acquire_configure(runtime, &props));
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 1920);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 1200);
 
         OK(acquire_shutdown(runtime));
         LOG("OK");

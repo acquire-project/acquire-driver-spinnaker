@@ -455,8 +455,10 @@ SpinnakerCamera::set(struct CameraProperties* properties)
     maybe_set_exposure_time_us(properties->exposure_time_us);
     maybe_set_binning(properties->binning);
     maybe_set_sample_type(properties->pixel_type);
-    maybe_set_offset(properties->offset);
+    // Set shape before offset because Spinnaker blocks updates
+    // to offset if the shape is too big.
     maybe_set_shape(properties->shape);
+    maybe_set_offset(properties->offset);
     maybe_set_input_trigger_frame_start(properties->input_triggers.frame_start);
     maybe_set_output_trigger_exposure(properties->output_triggers.exposure);
 }
