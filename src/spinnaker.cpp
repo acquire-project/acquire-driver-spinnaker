@@ -452,13 +452,14 @@ void
 SpinnakerCamera::set(struct CameraProperties* properties)
 {
     const std::scoped_lock lock(lock_);
-    maybe_set_exposure_time_us(properties->exposure_time_us);
-    maybe_set_binning(properties->binning);
-    maybe_set_sample_type(properties->pixel_type);
     // Set shape before offset because Spinnaker blocks updates
     // to offset if the shape is too big.
     maybe_set_shape(properties->shape);
     maybe_set_offset(properties->offset);
+    maybe_set_binning(properties->binning);
+    maybe_set_sample_type(properties->pixel_type);
+    // Exposure time can depend on lots of properties, so update it last.
+    maybe_set_exposure_time_us(properties->exposure_time_us);
     maybe_set_input_trigger_frame_start(properties->input_triggers.frame_start);
     maybe_set_output_trigger_exposure(properties->output_triggers.exposure);
 }
@@ -488,7 +489,7 @@ SpinnakerCamera::maybe_set_binning(uint8_t target)
             set_int_node(camera_->BinningVertical, (int64_t)target);
         }
         Spinnaker::GenApi::IInteger& binning = get_binning_node(camera_);
-        last_known_settings_.binning = (float)binning();
+        last_known_settings_.binning = (uint8_t)binning();
     }
 }
 
