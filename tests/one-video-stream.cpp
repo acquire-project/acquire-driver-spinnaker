@@ -34,13 +34,15 @@ reporter(int is_error,
          const char* function,
          const char* msg)
 {
-    fprintf(is_error ? stderr : stdout,
+    auto stream = is_error ? stderr : stdout;
+    fprintf(stream,
             "%s%s(%d) - %s: %s\n",
             is_error ? "ERROR " : "",
             file,
             line,
             function,
             msg);
+    fflush(stream);
 }
 
 int
@@ -62,11 +64,11 @@ main()
                                     &props.video[0].camera.identifier));
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Storage,
-                                    SIZED("Zarr") - 1,
+                                    SIZED("tiff") - 1,
                                     &props.video[0].storage.identifier));
 
         storage_properties_init(
-          &props.video[0].storage.settings, 0, SIZED("out.zarr"), 0, 0, { .x = 1, .y = 1 });
+          &props.video[0].storage.settings, 0, SIZED("out.tif"), 0, 0, { .x = 1, .y = 1 });
 
         props.video[0].camera.settings.binning = 1;
         props.video[0].camera.settings.pixel_type = SampleType_u8;

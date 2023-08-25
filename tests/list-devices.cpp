@@ -27,13 +27,15 @@ reporter(int is_error,
          const char* function,
          const char* msg)
 {
-    fprintf(is_error ? stderr : stdout,
+    auto stream = is_error ? stderr : stdout;
+    fprintf(stream,
             "%s%s(%d) - %s: %s\n",
             is_error ? "ERROR " : "",
             file,
             line,
             function,
             msg);
+    fflush(stream);
 }
 
 typedef struct Driver* (*init_func_t)(void (*reporter)(int is_error,

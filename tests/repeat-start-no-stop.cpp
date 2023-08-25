@@ -30,19 +30,22 @@
 #define DEVOK(e) CHECK(Device_Ok == (e))
 #define OK(e) CHECK(AcquireStatus_Ok == (e))
 
-static void
+void
 reporter(int is_error,
          const char* file,
          int line,
          const char* function,
          const char* msg)
 {
-    printf("%s%s(%d) - %s: %s\n",
-           is_error ? "ERROR " : "",
-           file,
-           line,
-           function,
-           msg);
+    auto stream = is_error ? stderr : stdout;
+    fprintf(stream,
+            "%s%s(%d) - %s: %s\n",
+            is_error ? "ERROR " : "",
+            file,
+            line,
+            function,
+            msg);
+    fflush(stream);
 }
 
 int
