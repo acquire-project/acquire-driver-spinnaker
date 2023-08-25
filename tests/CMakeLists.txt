@@ -4,7 +4,6 @@ else()
         set(NOTEST "TRUE")
         aq_require(acquire-driver-common)
         aq_require(acquire-video-runtime)
-        aq_require(acquire-driver-zarr)
         set(NOTEST "FALSE")
 
         #
@@ -51,7 +50,6 @@ else()
         foreach(driver
                 acquire-driver-common
                 acquire-driver-spinnaker
-                acquire-driver-zarr
         )
                 add_custom_target(${project}-copy-${driver}-for-tests
                         COMMAND ${CMAKE_COMMAND} -E copy
