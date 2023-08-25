@@ -52,6 +52,8 @@ main()
         CHECK(runtime);
         auto dm = acquire_device_manager(runtime);
         AcquireProperties props = {};
+        OK(acquire_get_configuration(runtime, &props));
+
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Camera,
                                     SIZED(".*BFLY.*") - 1,
@@ -60,6 +62,7 @@ main()
                                     DeviceKind_Storage,
                                     SIZED("trash") - 1,
                                     &props.video[0].storage.identifier));
+
         // Acquire's line 2 is defined to be the software trigger.
         props.video[0].camera.settings.input_triggers.frame_start.line = 2;
         props.video[0].camera.settings.input_triggers.frame_start.enable = 1;
@@ -67,9 +70,11 @@ main()
           TriggerEdge_Rising;
         props.video[0].max_frame_count = 10;
         OK(acquire_configure(runtime, &props));
+
         OK(acquire_start(runtime));
         clock_sleep_ms(0, 500);
         OK(acquire_abort(runtime));
+
         OK(acquire_shutdown(runtime));
         LOG("OK");
         return 0;

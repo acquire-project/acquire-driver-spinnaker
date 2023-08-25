@@ -74,8 +74,6 @@ main()
                                     SIZED("Trash") - 1,
                                     &props.video[0].storage.identifier));
 
-        OK(acquire_configure(runtime, &props));
-
         // Enable frame start input trigger on line 0.
         props.video[0].camera.settings.input_triggers.frame_start.line = 0;
         props.video[0].camera.settings.input_triggers.frame_start.enable = 1;
