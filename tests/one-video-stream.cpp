@@ -119,9 +119,6 @@ main()
                 0,
                 nframes,
                 -1e-3 * clock_toc_ms(&clock));
-
-            if (acquire_get_state(runtime) != DeviceState_Running)
-                break;
         }
 
         CHECK(nframes == props.video[0].max_frame_count);
