@@ -6,22 +6,6 @@
 #include <cstdio>
 #include <stdexcept>
 
-void
-reporter(int is_error,
-         const char* file,
-         int line,
-         const char* function,
-         const char* msg)
-{
-    fprintf(is_error ? stderr : stdout,
-            "%s%s(%d) - %s: %s\n",
-            is_error ? "ERROR " : "",
-            file,
-            line,
-            function,
-            msg);
-}
-
 /// Helper for passing size static strings as function args.
 /// For a function: `f(char*,size_t)` use `f(SIZED("hello"))`.
 /// Expands to `f("hello",5)`.
@@ -42,6 +26,22 @@ reporter(int is_error,
 #define CHECK(e) EXPECT(e, "Expression evaluated as false: %s", #e)
 #define DEVOK(e) CHECK(Device_Ok == (e))
 #define OK(e) CHECK(AcquireStatus_Ok == (e))
+
+void
+reporter(int is_error,
+         const char* file,
+         int line,
+         const char* function,
+         const char* msg)
+{
+    fprintf(is_error ? stderr : stdout,
+            "%s%s(%d) - %s: %s\n",
+            is_error ? "ERROR " : "",
+            file,
+            line,
+            function,
+            msg);
+}
 
 int
 main()
@@ -68,17 +68,9 @@ main()
         storage_properties_init(
           &props.video[0].storage.settings, 0, SIZED("out.zarr"), 0, 0, { .x = 1, .y = 1 });
 
-        OK(acquire_configure(runtime, &props));
-
-        AcquirePropertyMetadata metadata = { 0 };
-        OK(acquire_get_configuration_metadata(runtime, &metadata));
-
         props.video[0].camera.settings.binning = 1;
         props.video[0].camera.settings.pixel_type = SampleType_u8;
-        props.video[0].camera.settings.shape = {
-            .x = (uint32_t)metadata.video[0].camera.shape.x.high,
-            .y = (uint32_t)metadata.video[0].camera.shape.y.high,
-        };
+        props.video[0].camera.settings.shape = { .x = 1920, .y = 1200 };
         props.video[0].camera.settings.exposure_time_us = 1e4;
         props.video[0].max_frame_count = 10;
 

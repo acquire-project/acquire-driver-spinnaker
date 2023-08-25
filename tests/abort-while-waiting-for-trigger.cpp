@@ -5,22 +5,6 @@
 #include "platform.h"
 #include <stdexcept>
 
-void
-reporter(int is_error,
-         const char* file,
-         int line,
-         const char* function,
-         const char* msg)
-{
-    fprintf(is_error ? stderr : stdout,
-            "%s%s(%d) - %s: %s\n",
-            is_error ? "ERROR " : "",
-            file,
-            line,
-            function,
-            msg);
-}
-
 /// Helper for passing size static strings as function args.
 /// For a function: `f(char*,size_t)` use `f(SIZED("hello"))`.
 /// Expands to `f("hello",5)`.
@@ -41,6 +25,22 @@ reporter(int is_error,
 #define CHECK(e) EXPECT(e, "Expression evaluated as false: %s", #e)
 #define DEVOK(e) CHECK(Device_Ok == (e))
 #define OK(e) CHECK(AcquireStatus_Ok == (e))
+
+void
+reporter(int is_error,
+         const char* file,
+         int line,
+         const char* function,
+         const char* msg)
+{
+    fprintf(is_error ? stderr : stdout,
+            "%s%s(%d) - %s: %s\n",
+            is_error ? "ERROR " : "",
+            file,
+            line,
+            function,
+            msg);
+}
 
 int
 main()

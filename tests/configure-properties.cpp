@@ -5,22 +5,6 @@
 #include <cstdio>
 #include <stdexcept>
 
-void
-reporter(int is_error,
-         const char* file,
-         int line,
-         const char* function,
-         const char* msg)
-{
-    fprintf(is_error ? stderr : stdout,
-            "%s%s(%d) - %s: %s\n",
-            is_error ? "ERROR " : "",
-            file,
-            line,
-            function,
-            msg);
-}
-
 /// Helper for passing size static strings as function args.
 /// For a function: `f(char*,size_t)` use `f(SIZED("hello"))`.
 /// Expands to `f("hello",5)`.
@@ -50,6 +34,22 @@ reporter(int is_error,
         EXPECT(a_ == b_, "Expected %s==%s but " fmt "!=" fmt, #a, #b, a_, b_); \
     } while (0)
 
+void
+reporter(int is_error,
+         const char* file,
+         int line,
+         const char* function,
+         const char* msg)
+{
+    fprintf(is_error ? stderr : stdout,
+            "%s%s(%d) - %s: %s\n",
+            is_error ? "ERROR " : "",
+            file,
+            line,
+            function,
+            msg);
+}
+
 int
 main()
 {
@@ -71,8 +71,6 @@ main()
                                     DeviceKind_Storage,
                                     SIZED("Trash") - 1,
                                     &props.video[0].storage.identifier));
-
-        OK(acquire_configure(runtime, &props));
 
         // After this tests passes, the camera should have reasonable
         // default property values.

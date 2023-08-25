@@ -9,22 +9,26 @@
 #include <cstdio>
 #include <stdexcept>
 
+/// Helper for passing size static strings as function args.
+/// For a function: `f(char*,size_t)` use `f(SIZED("hello"))`.
+/// Expands to `f("hello",5)`.
+#define SIZED(str) str, sizeof(str)
+
 #define L (aq_logger)
 #define LOG(...) L(0, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 #define ERR(...) L(1, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
-#define CHECK(e)                                                               \
+#define EXPECT(e, ...)                                                         \
     do {                                                                       \
         if (!(e)) {                                                            \
-            ERR("Expression was false:\n\t%s\n", #e);                          \
-            throw std::runtime_error("Expression was false: " #e);             \
+            char buf[1 << 8] = { 0 };                                          \
+            ERR(__VA_ARGS__);                                                  \
+            snprintf(buf, sizeof(buf) - 1, __VA_ARGS__);                       \
+            throw std::runtime_error(buf);                                     \
         }                                                                      \
     } while (0)
-#define AOK(e) CHECK(AcquireStatus_Ok == (e))
-#define DEV(e) CHECK(Device_Ok == (e))
-
-// Expands a string argument into two arguments - str, bytes_of_string
-// (includes null)
-#define SIZED(str) str, sizeof(str)
+#define CHECK(e) EXPECT(e, "Expression evaluated as false: %s", #e)
+#define DEVOK(e) CHECK(Device_Ok == (e))
+#define OK(e) CHECK(AcquireStatus_Ok == (e))
 
 static void
 reporter(int is_error,
@@ -52,39 +56,37 @@ main()
 
         AcquireProperties properties = {};
         {
-            AOK(acquire_get_configuration(runtime, &properties));
-            DEV(device_manager_select(dm,
+            OK(acquire_get_configuration(runtime, &properties));
+            DEVOK(device_manager_select(dm,
                                       DeviceKind_Camera,
                                       SIZED(".*BFLY.*") - 1,
                                       &properties.video[0].camera.identifier));
-            DEV(device_manager_select(dm,
+            DEVOK(device_manager_select(dm,
                                       DeviceKind_Storage,
                                       SIZED("Trash") - 1,
                                       &properties.video[0].storage.identifier));
 
-            properties.video[0].camera.settings.binning = 1;
-            properties.video[0].camera.settings.exposure_time_us = 1e4;
-            properties.video[0].max_frame_count = 1 << 30;
+            properties.video[0].max_frame_count = 1000;
 
-            AOK(acquire_configure(runtime, &properties));
+            OK(acquire_configure(runtime, &properties));
         }
 
-        AOK(acquire_start(runtime));
+        OK(acquire_start(runtime));
 
         // await some data
         {
             VideoFrame *beg = nullptr, *end = nullptr;
             while (beg == end) {
-                AOK(acquire_map_read(runtime, 0, &beg, &end));
+                OK(acquire_map_read(runtime, 0, &beg, &end));
                 clock_sleep_ms(nullptr, 50.0);
             }
-            AOK(acquire_unmap_read(runtime, 0, (uint8_t*)end - (uint8_t*)beg));
+            OK(acquire_unmap_read(runtime, 0, (uint8_t*)end - (uint8_t*)beg));
         }
 
         CHECK(AcquireStatus_Error == acquire_start(runtime));
-        AOK(acquire_abort(runtime));
+        OK(acquire_abort(runtime));
 
-        AOK(acquire_shutdown(runtime));
+        OK(acquire_shutdown(runtime));
         LOG("OK");
         return 0;
     } catch (const std::exception& e) {
