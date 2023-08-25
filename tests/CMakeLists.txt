@@ -1,9 +1,11 @@
 if(${NOTEST})
         message(STATUS "Skipping test targets")
 else()
+        set(NOTEST "TRUE")
         aq_require(acquire-driver-common)
         aq_require(acquire-video-runtime)
         aq_require(acquire-driver-zarr)
+        set(NOTEST "FALSE")
 
         #
         # PARAMETERS
