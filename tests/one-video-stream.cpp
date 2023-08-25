@@ -90,43 +90,41 @@ main()
         clock_init(&clock);
         clock_shift_ms(&clock, time_limit_ms);
         OK(acquire_start(runtime));
-        {
-            uint64_t nframes = 0;
-            while (nframes < props.video[0].max_frame_count) {
-                struct clock throttle;
-                clock_init(&throttle);
-                EXPECT(clock_cmp_now(&clock) < 0,
-                       "Timeout at %f ms",
-                       clock_toc_ms(&clock) + time_limit_ms);
-                VideoFrame *beg, *end, *cur;
-                OK(acquire_map_read(runtime, 0, &beg, &end));
-                for (cur = beg; cur < end; cur = next(cur)) {
-                    LOG("stream %d counting frame w id %d", 0, cur->frame_id);
-                    CHECK(cur->shape.dims.width ==
-                          props.video[0].camera.settings.shape.x);
-                    CHECK(cur->shape.dims.height ==
-                          props.video[0].camera.settings.shape.y);
-                    ++nframes;
-                }
-                {
-                    size_t n = consumed_bytes(beg, end);
-                    OK(acquire_unmap_read(runtime, 0, n));
-                    if (n)
-                        LOG("stream %d consumed bytes %d", 0, n);
-                }
-                clock_sleep_ms(&throttle, 100.0f);
-
-                LOG("stream %d nframes %d. remaining time %f s",
-                    0,
-                    nframes,
-                    -1e-3 * clock_toc_ms(&clock));
-
-                if (acquire_get_state(runtime) != DeviceState_Running)
-                    break;
+        uint64_t nframes = 0;
+        while (nframes < props.video[0].max_frame_count) {
+            struct clock throttle;
+            clock_init(&throttle);
+            EXPECT(clock_cmp_now(&clock) < 0,
+                   "Timeout at %f ms",
+                   clock_toc_ms(&clock) + time_limit_ms);
+            VideoFrame *beg, *end, *cur;
+            OK(acquire_map_read(runtime, 0, &beg, &end));
+            for (cur = beg; cur < end; cur = next(cur)) {
+                LOG("stream %d counting frame w id %d", 0, cur->frame_id);
+                CHECK(cur->shape.dims.width ==
+                      props.video[0].camera.settings.shape.x);
+                CHECK(cur->shape.dims.height ==
+                      props.video[0].camera.settings.shape.y);
+                ++nframes;
             }
+            {
+                size_t n = consumed_bytes(beg, end);
+                OK(acquire_unmap_read(runtime, 0, n));
+                if (n)
+                    LOG("stream %d consumed bytes %d", 0, n);
+            }
+            clock_sleep_ms(&throttle, 100.0f);
 
-            CHECK(nframes == props.video[0].max_frame_count);
+            LOG("stream %d nframes %d. remaining time %f s",
+                0,
+                nframes,
+                -1e-3 * clock_toc_ms(&clock));
+
+            if (acquire_get_state(runtime) != DeviceState_Running)
+                break;
         }
+
+        CHECK(nframes == props.video[0].max_frame_count);
 
         OK(acquire_stop(runtime));
         OK(acquire_shutdown(runtime));
