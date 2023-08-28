@@ -14,6 +14,7 @@
 #include "Spinnaker.h"
 #include "SpinGenApi/SpinnakerGenApi.h"
 
+#include <algorithm>
 #include <stdexcept>
 #include <unordered_map>
 #include <mutex>
@@ -138,18 +139,6 @@ is_equal(const Trigger& lhs, const Trigger& rhs)
     return memcmp(&lhs, &rhs, sizeof(Trigger)) == 0;
 }
 
-// Clamps a value to be in the closed interval [low, high].
-template<typename T>
-T
-clamp(T value, T low, T high)
-{
-    if (value < low)
-        return low;
-    if (value > high)
-        return high;
-    return value;
-}
-
 // Returns true if a Spinnaker node is writable, false otherwise.
 bool
 check_node_writable(Spinnaker::GenApi::INode& node)
@@ -177,7 +166,7 @@ set_int_node(Spinnaker::GenApi::IInteger& node, int64_t value)
     if (check_node_writable(node)) {
         const int64_t min = node.GetMin();
         const int64_t max = node.GetMax();
-        value = clamp(value, min, max);
+        value = std::clamp(value, min, max);
         node = value;
     }
 }
@@ -188,7 +177,7 @@ set_float_node(Spinnaker::GenApi::IFloat& node, double value)
     if (check_node_writable(node)) {
         const double min = node.GetMin();
         const double max = node.GetMax();
-        value = clamp(value, min, max);
+        value = std::clamp(value, min, max);
         node = value;
     }
 }
@@ -568,7 +557,7 @@ void
 SpinnakerCamera::update_output_trigger_exposure(Trigger& trigger)
 {
     trigger.kind = Signal_Output;
-    trigger.enable = (*(camera_->LineSource) == genicam_exposure_active) &&
+    trigger.enable = (*(camera_->LineSelector) == genicam_line_1) &&
                      (*(camera_->LineSource) == genicam_exposure_active);
     trigger.line = 1;
     // TODO: check if this is the expected edge type for exposure active.
