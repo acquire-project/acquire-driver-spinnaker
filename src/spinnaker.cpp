@@ -115,14 +115,19 @@ const std::unordered_map<uint8_t, Spinnaker::GenICam::gcstring>
   trigger_line_to_source{
       { 0, "Line0" },
       { 1, "Line1" },
-      { 2, "Software" },
+      { 2, "Line2" },
+      { 3, "Line3" },
+      { 4, "Line4" },
+      { 5, "Line5" },
+      { 6, "Line6" },
+      { 7, "Software" },
   };
 
 uint8_t
 to_trigger_line(const Spinnaker::GenICam::gcstring& source)
 {
-    // Acquire's line 3 is unassigned here so use it for an unknown line.
-    return inv_at_or<uint8_t>(trigger_line_to_source, source, 3);
+    // Acquire's line 8 is unassigned here so use it for an unknown line.
+    return inv_at_or<uint8_t>(trigger_line_to_source, source, 8);
 }
 
 const Spinnaker::GenICam::gcstring&
@@ -569,7 +574,7 @@ SpinnakerCamera::update_output_trigger_exposure(Trigger& trigger)
 {
     trigger.kind = Signal_Output;
     trigger.enable = (*(camera_->LineSource) == genicam_exposure_active) &&
-                     (*(camera_->LineSource) == genicam_exposure_active);
+                     (*(camera_->LineSelector) == genicam_line_1);
     trigger.line = 1;
     // TODO: check if this is the expected edge type for exposure active.
     trigger.edge = TriggerEdge_LevelHigh;
@@ -775,7 +780,7 @@ SpinnakerCamera::stop()
     }
     // Could possibly use camera_->IsStreaming instead, but the Spinnaker
     // docs are not clear enough about what that means. It's critical
-    // that we call EndAcquisiton exactly when needed so that associated
+    // that we call EndAcquisition exactly when needed so that associated
     // buffers are freed.
     if (started_) {
         camera_->EndAcquisition();

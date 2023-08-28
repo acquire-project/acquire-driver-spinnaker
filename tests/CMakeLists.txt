@@ -16,7 +16,8 @@ else()
         #
         set(tests
                 list-devices
-                one-video-stream
+                blackfly-one-video-stream
+                oryx-one-video-stream
                 repeat-start
                 repeat-start-no-stop
                 configure-properties
