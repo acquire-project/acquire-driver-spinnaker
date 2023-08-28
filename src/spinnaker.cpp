@@ -239,12 +239,12 @@ struct SpinnakerCamera final : private Camera
     // used to avoid doing so when a value is unchanged.
     struct CameraProperties last_known_settings_;
 
-    void query_exposure_time_capabilites(CameraPropertyMetadata* meta) const;
-    void query_binning_capabilites(CameraPropertyMetadata* meta) const;
-    void query_roi_offset_capabilites(CameraPropertyMetadata* meta) const;
-    void query_roi_shape_capabilites(CameraPropertyMetadata* meta) const;
-    void query_pixel_type_capabilites(CameraPropertyMetadata* meta) const;
-    static void query_triggering_capabilites(CameraPropertyMetadata* meta);
+    void query_exposure_time_capabilities(CameraPropertyMetadata* meta) const;
+    void query_binning_capabilities(CameraPropertyMetadata* meta) const;
+    void query_roi_offset_capabilities(CameraPropertyMetadata* meta) const;
+    void query_roi_shape_capabilities(CameraPropertyMetadata* meta) const;
+    void query_pixel_type_capabilities(CameraPropertyMetadata* meta) const;
+    static void query_triggering_capabilities(CameraPropertyMetadata* meta);
 
     void maybe_set_exposure_time_us(float target_us);
     void maybe_set_binning(uint8_t target);
@@ -612,19 +612,19 @@ void
 SpinnakerCamera::get_meta(struct CameraPropertyMetadata* meta) const
 {
     const std::scoped_lock lock(lock_);
-    query_exposure_time_capabilites(meta);
+    query_exposure_time_capabilities(meta);
     // Not part of the Spinnaker API.
     meta->line_interval_us = { .writable = false };
     meta->readout_direction = { .writable = false };
-    query_binning_capabilites(meta);
-    query_roi_offset_capabilites(meta);
-    query_roi_shape_capabilites(meta);
-    query_pixel_type_capabilites(meta);
-    query_triggering_capabilites(meta);
+    query_binning_capabilities(meta);
+    query_roi_offset_capabilities(meta);
+    query_roi_shape_capabilities(meta);
+    query_pixel_type_capabilities(meta);
+    query_triggering_capabilities(meta);
 }
 
 void
-SpinnakerCamera::query_exposure_time_capabilites(
+SpinnakerCamera::query_exposure_time_capabilities(
   CameraPropertyMetadata* meta) const
 {
     meta->exposure_time_us = {
@@ -636,7 +636,7 @@ SpinnakerCamera::query_exposure_time_capabilites(
 }
 
 void
-SpinnakerCamera::query_binning_capabilites(CameraPropertyMetadata* meta) const
+SpinnakerCamera::query_binning_capabilities(CameraPropertyMetadata* meta) const
 {
     Spinnaker::GenApi::IInteger& binning = get_binning_node(camera_);
     meta->binning = {
@@ -647,7 +647,7 @@ SpinnakerCamera::query_binning_capabilites(CameraPropertyMetadata* meta) const
     };
 }
 void
-SpinnakerCamera::query_roi_offset_capabilites(
+SpinnakerCamera::query_roi_offset_capabilities(
   CameraPropertyMetadata* meta) const
 {
     meta->offset = {
@@ -666,7 +666,7 @@ SpinnakerCamera::query_roi_offset_capabilites(
     };
 }
 void
-SpinnakerCamera::query_roi_shape_capabilites(CameraPropertyMetadata* meta) const
+SpinnakerCamera::query_roi_shape_capabilities(CameraPropertyMetadata* meta) const
 {
     meta->shape = {
         .x = {
@@ -685,7 +685,7 @@ SpinnakerCamera::query_roi_shape_capabilites(CameraPropertyMetadata* meta) const
 }
 
 void
-SpinnakerCamera::query_pixel_type_capabilites(
+SpinnakerCamera::query_pixel_type_capabilities(
   CameraPropertyMetadata* meta) const
 {
     meta->supported_pixel_types = 0;
@@ -698,7 +698,7 @@ SpinnakerCamera::query_pixel_type_capabilites(
 }
 
 void
-SpinnakerCamera::query_triggering_capabilites(CameraPropertyMetadata* meta)
+SpinnakerCamera::query_triggering_capabilities(CameraPropertyMetadata* meta)
 {
     // These are based on inspection of blackfly camera properties in SpinView.
     // ExposureActive can be selected using the Trigger Selector in SpinView,
