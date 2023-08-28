@@ -20,7 +20,8 @@ else()
                 oryx-one-video-stream
                 repeat-start
                 repeat-start-no-stop
-                configure-properties
+                blackfly-configure-properties
+                oryx-configure-properties
                 configure-triggering
                 abort-while-waiting-for-trigger
         )
