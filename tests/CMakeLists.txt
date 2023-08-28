@@ -18,8 +18,10 @@ else()
                 list-devices
                 blackfly-one-video-stream
                 oryx-one-video-stream
-                repeat-start
-                repeat-start-no-stop
+                blackfly-repeat-start
+                oryx-repeat-start
+                blackfly-repeat-start-no-stop
+                oryx-repeat-start-no-stop
                 blackfly-configure-properties
                 oryx-configure-properties
                 configure-triggering
