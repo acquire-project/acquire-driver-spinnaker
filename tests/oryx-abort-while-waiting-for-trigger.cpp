@@ -56,18 +56,16 @@ main()
 
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Camera,
-                                    SIZED(".*BFLY.*") - 1,
+                                    SIZED(".*ORX-10GS-51S5M.*") - 1,
                                     &props.video[0].camera.identifier));
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Storage,
                                     SIZED("trash") - 1,
                                     &props.video[0].storage.identifier));
 
-        // Acquire's line 2 is defined to be the software trigger.
-        props.video[0].camera.settings.input_triggers.frame_start.line = 2;
+        // Acquire's line 7 is defined to be the software trigger.
+        props.video[0].camera.settings.input_triggers.frame_start.line = 7;
         props.video[0].camera.settings.input_triggers.frame_start.enable = 1;
-        props.video[0].camera.settings.input_triggers.frame_start.edge =
-          TriggerEdge_Rising;
         props.video[0].max_frame_count = 10;
         OK(acquire_configure(runtime, &props));
 

@@ -43,6 +43,7 @@ const Spinnaker::GenICam::gcstring genicam_off("Off");
 const Spinnaker::GenICam::gcstring genicam_on("On");
 const Spinnaker::GenICam::gcstring genicam_frame_start("FrameStart");
 const Spinnaker::GenICam::gcstring genicam_line_1("Line1");
+const Spinnaker::GenICam::gcstring genicam_software("Software");
 const Spinnaker::GenICam::gcstring genicam_output("Output");
 const Spinnaker::GenICam::gcstring genicam_exposure_active("ExposureActive");
 const Spinnaker::GenICam::gcstring genicam_continuous("Continuous");
@@ -560,8 +561,11 @@ SpinnakerCamera::maybe_set_input_trigger_frame_start(Trigger& target)
 
         set_enum_node(camera_->TriggerSelector, genicam_frame_start);
         set_enum_node(camera_->TriggerSource, to_trigger_source(target.line));
-        set_enum_node(camera_->TriggerActivation,
-                      to_trigger_activation(target.edge));
+        // TODO: not settable for oryx when this is software. Is this the same
+        // for the blackfly?
+        if (*(camera_->TriggerSource) != genicam_software) {
+            set_enum_node(camera_->TriggerActivation, to_trigger_activation(target.edge));
+        }
         set_enum_node(camera_->TriggerMode,
                       target.enable ? genicam_on : genicam_off);
 
@@ -721,16 +725,30 @@ SpinnakerCamera::query_triggering_capabilites(CameraPropertyMetadata* meta)
     // but Spinnaker does not have a corresponding enum value in
     // TriggerSelectorEnums, so do not enable it as an input trigger.
     meta->digital_lines = {
-        .line_count = 3,
+        .line_count = 8,
         .names = {
           "Line0",
           "Line1",
+          "Line2",
+          "Line3",
+          "Line4",
+          "Line5",
+          "Line6",
           "Software",
         },
     };
+
+    // Blackfly
+    //meta->triggers = {
+    //    .exposure = { .input = 0, .output = 0b0010 },
+    //    .frame_start = { .input = 0b10000001, .output = 0 },
+    //};
+
+    // Oryx
     meta->triggers = {
-        .exposure = { .input = 0, .output = 0b0010 },
-        .frame_start = { .input = 0b0101, .output = 0 },
+        .acquisition_start = { .input = 0b10100101, .output = 0 },
+        .exposure = { .input = 0b00100100, .output = 0b00110110 },
+        .frame_start = { .input = 0b10100101, .output = 0 },
     };
 }
 

@@ -17,15 +17,16 @@ else()
         set(tests
                 list-devices
                 blackfly-one-video-stream
-                oryx-one-video-stream
                 blackfly-repeat-start
-                oryx-repeat-start
                 blackfly-repeat-start-no-stop
-                oryx-repeat-start-no-stop
                 blackfly-configure-properties
+                blackfly-abort-while-waiting-for-trigger
+                oryx-one-video-stream
+                oryx-repeat-start
+                oryx-repeat-start-no-stop
                 oryx-configure-properties
+                oryx-abort-while-waiting-for-trigger
                 configure-triggering
-                abort-while-waiting-for-trigger
         )
 
         foreach(name ${tests})
