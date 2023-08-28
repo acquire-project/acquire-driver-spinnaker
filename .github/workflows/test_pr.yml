@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat-blackfly-usb3 # TODO: remove; temp for this PR
   pull_request:
     branches:
       - main
