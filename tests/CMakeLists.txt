@@ -20,13 +20,14 @@ else()
                 blackfly-repeat-start
                 blackfly-repeat-start-no-stop
                 blackfly-configure-properties
+                blackfly-configure-triggering
                 blackfly-abort-while-waiting-for-trigger
                 oryx-one-video-stream
                 oryx-repeat-start
                 oryx-repeat-start-no-stop
                 oryx-configure-properties
+                oryx-configure-triggering
                 oryx-abort-while-waiting-for-trigger
-                configure-triggering
         )
 
         foreach(name ${tests})
