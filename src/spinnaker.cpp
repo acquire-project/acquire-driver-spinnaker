@@ -462,8 +462,6 @@ SpinnakerCamera::maybe_set_exposure_time_us(float target_us)
 {
     if (target_us != last_known_settings_.exposure_time_us) {
         set_float_node(camera_->ExposureTime, (double)target_us);
-        // TODO: may not need to actually get from camera because try_camera_set
-        // in runtime/source.c calls get after calling set.
         last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
     }
 }
