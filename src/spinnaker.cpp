@@ -465,12 +465,12 @@ SpinnakerCamera::maybe_set_binning(uint8_t target)
     if (target != last_known_settings_.binning) {
         // Only one of horizontal and vertical may be writable, so explicitly
         // check each before attempting to write.
-        // TODO: should we error/log if neither is writable?
         if (IsWritable(camera_->BinningHorizontal)) {
             set_int_node(camera_->BinningHorizontal, (int64_t)target);
-        }
-        if (IsWritable(camera_->BinningVertical)) {
+        } else if (IsWritable(camera_->BinningVertical)) {
             set_int_node(camera_->BinningVertical, (int64_t)target);
+        } else {
+            LOGE("Neither horizontal nor vertical binning is writable.");
         }
         Spinnaker::GenApi::IInteger& binning = get_binning_node(camera_);
         last_known_settings_.binning = (uint8_t)binning();
