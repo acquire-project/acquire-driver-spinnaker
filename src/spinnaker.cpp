@@ -793,8 +793,8 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 
     if (frame->IsIncomplete()) {
         LOGE(
-          "Image incomplete: (%d) %s",
-          (int)frame->GetFrameID(),
+          "Image incomplete: (%llu) %s",
+          frame->GetFrameID(),
           Spinnaker::Image::GetImageStatusDescription(frame->GetImageStatus()));
     } else {
         const size_t width = frame->GetWidth();
@@ -829,7 +829,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     }
 
     // Possibly unneeded, but we manually release as instructed in the Spinnaker
-    // Acquistion.cpp example because this image was retrieved directly from the
+    // Acquisition.cpp example because this image was retrieved directly from the
     // camera.
     frame->Release();
 }
