@@ -46,6 +46,7 @@ const Spinnaker::GenICam::gcstring genicam_frame_start("FrameStart");
 const Spinnaker::GenICam::gcstring genicam_line_1("Line1");
 const Spinnaker::GenICam::gcstring genicam_output("Output");
 const Spinnaker::GenICam::gcstring genicam_exposure_active("ExposureActive");
+const Spinnaker::GenICam::gcstring genicam_user_output_1("UserOutput1");
 const Spinnaker::GenICam::gcstring genicam_continuous("Continuous");
 const Spinnaker::GenICam::gcstring genicam_timed("Timed");
 
@@ -154,6 +155,14 @@ check_node_writable(Spinnaker::GenApi::INode& node)
 void
 set_enum_node(Spinnaker::GenApi::IEnumeration& node,
               const Spinnaker::GenICam::gcstring& value)
+{
+    if (check_node_writable(node)) {
+        node = value;
+    }
+}
+
+void
+set_bool_node(Spinnaker::GenApi::IBoolean& node, bool value)
 {
     if (check_node_writable(node)) {
         node = value;
@@ -561,12 +570,16 @@ SpinnakerCamera::update_output_trigger_exposure(Trigger& trigger)
 void
 SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target)
 {
-    // TODO: is there a way to disable an output line using Spinnaker?
-    if (!is_equal(target, last_known_settings_.output_triggers.exposure) &&
-        target.enable) {
+    if (!is_equal(target, last_known_settings_.output_triggers.exposure)) {
         set_enum_node(camera_->LineSelector, genicam_line_1);
         set_enum_node(camera_->LineMode, genicam_output);
-        set_enum_node(camera_->LineSource, genicam_exposure_active);
+        if (target.enable) {
+            set_enum_node(camera_->LineSource, genicam_exposure_active);
+        } else {
+            set_enum_node(camera_->LineSource, genicam_user_output_1);
+            set_enum_node(camera_->UserOutputSelector, genicam_user_output_1);
+            set_bool_node(camera_->UserOutputValue, false);
+        }
         update_output_trigger_exposure(
           last_known_settings_.output_triggers.exposure);
     }
