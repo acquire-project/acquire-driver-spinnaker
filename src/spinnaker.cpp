@@ -409,14 +409,6 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   , last_known_settings_{}
   , started_(false)
 {
-    // Sometimes the camera is still initialized from a previous run.
-    // Ideally, we would error here, but that can make the camera indefinitely
-    // unusable in Acquire, so log and reset instead.
-    if (camera->IsInitialized()) {
-        LOGE("Camera was already initialized. De-initializing it before "
-             "re-initializing.");
-        camera_->DeInit();
-    }
     camera->Init();
 
     // Acquire only supports certain values of some node values, so set these
@@ -1018,10 +1010,19 @@ SpinnakerDriver::open(uint64_t device_id, struct Device** out)
     Spinnaker::CameraList camera_list = system_->GetCameras();
     Spinnaker::CameraPtr camera =
       camera_list.GetByIndex((unsigned int)device_id);
-    // TODO: SpinnakerCamera may partially initialize the camera
-    // and throw, so we may want a try/catch block here that deinits
-    // the camera if it was initialized.
-    *out = (Device*)new SpinnakerCamera(camera);
+    try {
+        *out = (Device*)new SpinnakerCamera(camera);
+    } catch (...) {
+        // If the SpinnakerCamera constructor threw, then the camera
+        // may be partially initialized. Ensure it is de-initialized
+        // so that the next run may succeed before re-throwing.
+        if (camera->IsInitialized()) {
+            LOGE("Failed to open camera, but it was initialized. "
+                 "De-initializing it to clean up.");
+            camera->DeInit();
+        }
+        throw;
+    }
 }
 
 void
