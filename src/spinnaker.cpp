@@ -229,10 +229,6 @@ struct SpinnakerCamera final : private Camera
     // Used as a concise way to get and set a Spinnaker camera's state,
     // rather than through its GenICam node map.
     Spinnaker::CameraPtr camera_;
-    // Frame ID that starts at 0 each time the camera is started and
-    // increments for each frame retrieved.
-    // TODO: could use Spinnaker::Image::GetFrameID instead?
-    uint64_t frame_id_;
     // True if the camera has been started, false otherwise.
     bool started_;
     // Setting properties on the device may be expensive, so these are
@@ -402,7 +398,6 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   }
   , camera_(camera)
   , last_known_settings_{}
-  , frame_id_(0)
   , started_(false)
 {
     // Sometimes the camera is still initialized from a previous run.
@@ -747,7 +742,6 @@ void
 SpinnakerCamera::start()
 {
     const std::scoped_lock lock(lock_);
-    frame_id_ = 0;
     set_enum_node(camera_->AcquisitionMode, genicam_continuous);
     camera_->BeginAcquisition();
     started_ = true;
@@ -829,7 +823,7 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
                   .type = to_sample_type(frame->GetPixelFormatName()),
               },
               .hardware_timestamp = timestamp_ns,
-              .hardware_frame_id = frame_id_++,
+              .hardware_frame_id = frame->GetFrameID(),
         };
     }
 
