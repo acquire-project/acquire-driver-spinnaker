@@ -555,8 +555,7 @@ SpinnakerCamera::update_output_trigger_exposure(Trigger& trigger)
     trigger.enable = (*(camera_->LineSelector) == genicam_line_1) &&
                      (*(camera_->LineSource) == genicam_exposure_active);
     trigger.line = 1;
-    // TODO: check if this is the expected edge type for exposure active.
-    trigger.edge = TriggerEdge_LevelHigh;
+    trigger.edge = camera_->LineInverter() ? TriggerEdge_LevelLow : TriggerEdge_LevelHigh;
 }
 
 void
