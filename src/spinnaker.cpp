@@ -793,7 +793,8 @@ SpinnakerCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 
     if (frame->IsIncomplete()) {
         LOGE(
-          "Image incomplete: %s",
+          "Image incomplete: (%d) %s",
+          (int)frame->GetFrameID(),
           Spinnaker::Image::GetImageStatusDescription(frame->GetImageStatus()));
     } else {
         const size_t width = frame->GetWidth();
