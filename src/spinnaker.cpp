@@ -514,15 +514,6 @@ SpinnakerCamera::maybe_set_roi(
         last_known_settings_.binning = (uint8_t)node();
     }
 
-    if (offset.x != 0) {
-        set_int_node(camera_->OffsetX, (int64_t)offset.x);
-        last_offset.x = (uint32_t)camera_->OffsetX();
-    }
-    if (offset.y != 0) {
-        set_int_node(camera_->OffsetY, (int64_t)offset.y);
-        last_offset.y = (uint32_t)camera_->OffsetY();
-    }
-
     // TODO: these will almost always be true, so I wonder if we should
     // set the shape to be as small as possible.
     if (shape.x != min_width) {
@@ -532,6 +523,15 @@ SpinnakerCamera::maybe_set_roi(
     if (shape.y != min_height) {
         set_int_node(camera_->Height, (int64_t)shape.y);
         last_shape.y = (uint32_t)camera_->Height();
+    }
+
+    if (offset.x != 0) {
+        set_int_node(camera_->OffsetX, (int64_t)offset.x);
+        last_offset.x = (uint32_t)camera_->OffsetX();
+    }
+    if (offset.y != 0) {
+        set_int_node(camera_->OffsetY, (int64_t)offset.y);
+        last_offset.y = (uint32_t)camera_->OffsetY();
     }
 }
 
