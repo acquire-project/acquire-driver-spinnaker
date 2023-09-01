@@ -251,11 +251,9 @@ struct SpinnakerCamera final : private Camera
     void query_pixel_type_capabilities(CameraPropertyMetadata* meta) const;
     static void query_triggering_capabilities(CameraPropertyMetadata* meta);
 
-    void maybe_set_exposure_time_us(float target_us);
-    void maybe_set_binning(uint8_t target);
+    void maybe_set_roi(uint8_t binning, CameraProperties::camera_properties_offset_s offset, CameraProperties::camera_properties_shape_s shape);
     void maybe_set_sample_type(SampleType target);
-    void maybe_set_offset(CameraProperties::camera_properties_offset_s target);
-    void maybe_set_shape(CameraProperties::camera_properties_shape_s target);
+    void maybe_set_exposure_time_us(float target_us);
     void maybe_set_input_trigger_frame_start(Trigger& target);
     void maybe_set_output_trigger_exposure(Trigger& target);
 
@@ -437,42 +435,97 @@ void
 SpinnakerCamera::set(struct CameraProperties* properties)
 {
     const std::scoped_lock lock(lock_);
-    // Set shape before offset because Spinnaker blocks updates
-    // to offset if the shape is too big.
-    maybe_set_shape(properties->shape);
-    maybe_set_offset(properties->offset);
-    maybe_set_binning(properties->binning);
+    maybe_set_roi(properties->binning, properties->offset, properties->shape);
     maybe_set_sample_type(properties->pixel_type);
-    // Exposure time can depend on lots of properties, so update it last.
     maybe_set_exposure_time_us(properties->exposure_time_us);
     maybe_set_input_trigger_frame_start(properties->input_triggers.frame_start);
     maybe_set_output_trigger_exposure(properties->output_triggers.exposure);
 }
 
 void
-SpinnakerCamera::maybe_set_exposure_time_us(float target_us)
+SpinnakerCamera::maybe_set_roi(
+  uint8_t binning,
+  CameraProperties::camera_properties_offset_s offset, CameraProperties::camera_properties_shape_s shape)
 {
-    if (target_us != last_known_settings_.exposure_time_us) {
-        set_float_node(camera_->ExposureTime, (double)target_us);
-        last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
-    }
-}
+    const uint8_t last_binning = last_known_settings_.binning;
+    CameraProperties::camera_properties_offset_s& last_offset =
+      last_known_settings_.offset;
+    CameraProperties::camera_properties_shape_s& last_shape =
+      last_known_settings_.shape;
 
-void
-SpinnakerCamera::maybe_set_binning(uint8_t target)
-{
-    if (target != last_known_settings_.binning) {
-        // Only one of horizontal and vertical may be writable, so explicitly
-        // check each before attempting to write.
-        if (IsWritable(camera_->BinningHorizontal)) {
-            set_int_node(camera_->BinningHorizontal, (int64_t)target);
-        } else if (IsWritable(camera_->BinningVertical)) {
-            set_int_node(camera_->BinningVertical, (int64_t)target);
-        } else {
+    // If nothing changed, then nothing should be set, so return early.
+    if (binning == last_binning &&
+        offset.x == last_offset.x &&
+        offset.y == last_offset.y &&
+        shape.x == last_shape.x &&
+        shape.y == last_shape.y) {
+        return;
+    }
+
+    const bool supports_horizontal_binning = IsWritable(camera_->BinningHorizontal);
+    const bool supports_vertical_binning = IsWritable(camera_->BinningVertical);
+
+    // Binning, offset, and shape are dependent properties because they
+    // define the region of interest and pixel sizes of output frames.
+    // We want to set them atomically, but Spinnaker only allows us to
+    // set them one at a time. Therefore, first we reset all of them so
+    // that the region of interest is defined over the whole sensor
+    // without any binning. Because of their co-dependency, order is
+    // important here and later.
+    // If resetting does not succeed here, something is very wrong,
+    // so allow this block to throw.
+    if (last_binning != 1) {
+        if (supports_horizontal_binning) {
+            camera_->BinningHorizontal = 1;
+        }
+        if (supports_vertical_binning) {
+            camera_->BinningVertical = 1;
+        }
+    }
+    if (last_offset.x != 0) {
+        camera_->OffsetX = 0;
+    }
+    if (last_offset.y != 0) {
+        camera_->OffsetY = 0;
+    }
+    if (int64_t width_max = camera_->WidthMax(); width_max != last_shape.x) {
+        camera_->Width = width_max;
+    }
+    if (int64_t height_max = camera_->HeightMax(); last_shape.y != height_max) {
+        camera_->Height = height_max;
+    }
+
+    if (binning != last_binning) {
+        // Some cameras only support setting either horizontal or vertical.
+        if (supports_horizontal_binning) {
+            set_int_node(camera_->BinningHorizontal, (int64_t)binning);
+        }
+        if (supports_vertical_binning) {
+            set_int_node(camera_->BinningVertical, (int64_t)binning);
+        } 
+        if (!(supports_horizontal_binning || supports_vertical_binning)) {
             LOGE("Neither horizontal nor vertical binning is writable.");
         }
-        Spinnaker::GenApi::IInteger& binning = get_binning_node(camera_);
-        last_known_settings_.binning = (uint8_t)binning();
+        Spinnaker::GenApi::IInteger& node = get_binning_node(camera_);
+        last_known_settings_.binning = (uint8_t)node();
+    }
+
+    if (offset.x != last_offset.x) {
+        set_int_node(camera_->OffsetX, (int64_t)offset.x);
+        last_offset.x = (uint32_t)camera_->OffsetX();
+    }
+    if (offset.y != last_offset.y) {
+        set_int_node(camera_->OffsetY, (int64_t)offset.y);
+        last_offset.y = (uint32_t)camera_->OffsetY();
+    }
+
+    if (shape.x != last_shape.x) {
+        set_int_node(camera_->Width, (int64_t)shape.x);
+        last_shape.x = (uint32_t)camera_->Width();
+    }
+    if (shape.y != last_shape.y) {
+        set_int_node(camera_->Height, (int64_t)shape.y);
+        last_shape.y = (uint32_t)camera_->Height();
     }
 }
 
@@ -488,34 +541,11 @@ SpinnakerCamera::maybe_set_sample_type(SampleType target)
 }
 
 void
-SpinnakerCamera::maybe_set_offset(
-  CameraProperties::camera_properties_offset_s target)
+SpinnakerCamera::maybe_set_exposure_time_us(float target_us)
 {
-    CameraProperties::camera_properties_offset_s& last =
-      last_known_settings_.offset;
-    if (target.x != last.x) {
-        set_int_node(camera_->OffsetX, (int64_t)target.x);
-        last.x = (uint32_t)camera_->OffsetX();
-    }
-    if (target.y != last.y) {
-        set_int_node(camera_->OffsetY, (int64_t)target.y);
-        last.y = (uint32_t)camera_->OffsetY();
-    }
-}
-
-void
-SpinnakerCamera::maybe_set_shape(
-  CameraProperties::camera_properties_shape_s target)
-{
-    CameraProperties::camera_properties_shape_s& last =
-      last_known_settings_.shape;
-    if (target.x != last.x) {
-        set_int_node(camera_->Width, (int64_t)target.x);
-        last.x = (uint32_t)camera_->Width();
-    }
-    if (target.y != last.y) {
-        set_int_node(camera_->Height, (int64_t)target.y);
-        last.y = (uint32_t)camera_->Height();
+    if (target_us != last_known_settings_.exposure_time_us) {
+        set_float_node(camera_->ExposureTime, (double)target_us);
+        last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
     }
 }
 
@@ -608,7 +638,6 @@ SpinnakerCamera::get_meta(struct CameraPropertyMetadata* meta) const
 {
     const std::scoped_lock lock(lock_);
     query_exposure_time_capabilities(meta);
-    // Not part of the Spinnaker API.
     meta->line_interval_us = { .writable = false };
     meta->readout_direction = { .writable = false };
     query_binning_capabilities(meta);
