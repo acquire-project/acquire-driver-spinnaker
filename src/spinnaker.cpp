@@ -554,22 +554,20 @@ SpinnakerCamera::update_output_trigger_exposure(Trigger& trigger)
     trigger.enable = (*(camera_->LineSelector) == genicam_line_1) &&
                      (*(camera_->LineSource) == genicam_exposure_active);
     trigger.line = 1;
-    trigger.edge = camera_->LineInverter() ? TriggerEdge_LevelLow : TriggerEdge_LevelHigh;
+    // TODO: may be able to use LineInverter to determine the trigger edge
+    // but that is not always readable.
+    trigger.edge = TriggerEdge_LevelHigh;
 }
 
 void
 SpinnakerCamera::maybe_set_output_trigger_exposure(Trigger& target)
 {
-    if (!is_equal(target, last_known_settings_.output_triggers.exposure)) {
+    if (!is_equal(target, last_known_settings_.output_triggers.exposure) && target.enable) {
         set_enum_node(camera_->LineSelector, genicam_line_1);
         set_enum_node(camera_->LineMode, genicam_output);
-        if (target.enable) {
-            set_enum_node(camera_->LineSource, genicam_exposure_active);
-        } else {
-            set_enum_node(camera_->LineSource, genicam_user_output_0);
-            set_enum_node(camera_->UserOutputSelector, genicam_user_output_0);
-            set_bool_node(camera_->UserOutputValue, false);
-        }
+        // TODO: may be able to disable the output line by setting the
+        // line source as user output, but having some issues with that.
+        set_enum_node(camera_->LineSource, genicam_exposure_active);
         update_output_trigger_exposure(
           last_known_settings_.output_triggers.exposure);
     }
