@@ -468,10 +468,10 @@ SpinnakerCamera::maybe_set_roi(
     // Binning, offset, and shape are dependent properties because they
     // define the region of interest and pixel sizes of output frames.
     // We want to set them atomically, but Spinnaker only allows us to
-    // set them one at a time. Therefore, first we reset all of them so
-    // that the region of interest is defined over the whole sensor
-    // without any binning. Because of their co-dependency, order is
-    // important here and later.
+    // set them one at a time. Therefore, first we make the output region
+    // as small as possible, to allow other values to change.
+    // Then we change them according to a precedence of binning, shape,
+    // then offset.
     // If resetting does not succeed here, something is very wrong,
     // so allow this block to throw.
     if (last_binning != 1) {
@@ -482,17 +482,21 @@ SpinnakerCamera::maybe_set_roi(
             camera_->BinningVertical = 1;
         }
     }
+
     if (last_offset.x != 0) {
         camera_->OffsetX = 0;
     }
     if (last_offset.y != 0) {
         camera_->OffsetY = 0;
     }
-    if (int64_t width_max = camera_->WidthMax(); width_max != last_shape.x) {
-        camera_->Width = width_max;
+
+    const int64_t min_width = camera_->Width.GetMin();
+    if (min_width != last_shape.x) {
+        camera_->Width = min_width;
     }
-    if (int64_t height_max = camera_->HeightMax(); last_shape.y != height_max) {
-        camera_->Height = height_max;
+    const int64_t min_height = camera_->Height.GetMin();
+    if (min_height != last_shape.y) {
+        camera_->Height = min_height;
     }
 
     if (binning != last_binning) {
@@ -510,20 +514,22 @@ SpinnakerCamera::maybe_set_roi(
         last_known_settings_.binning = (uint8_t)node();
     }
 
-    if (offset.x != last_offset.x) {
+    if (offset.x != 0) {
         set_int_node(camera_->OffsetX, (int64_t)offset.x);
         last_offset.x = (uint32_t)camera_->OffsetX();
     }
-    if (offset.y != last_offset.y) {
+    if (offset.y != 0) {
         set_int_node(camera_->OffsetY, (int64_t)offset.y);
         last_offset.y = (uint32_t)camera_->OffsetY();
     }
 
-    if (shape.x != last_shape.x) {
+    // TODO: these will almost always be true, so I wonder if we should
+    // set the shape to be as small as possible.
+    if (shape.x != min_width) {
         set_int_node(camera_->Width, (int64_t)shape.x);
         last_shape.x = (uint32_t)camera_->Width();
     }
-    if (shape.y != last_shape.y) {
+    if (shape.y != min_height) {
         set_int_node(camera_->Height, (int64_t)shape.y);
         last_shape.y = (uint32_t)camera_->Height();
     }
