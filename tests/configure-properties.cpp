@@ -77,11 +77,11 @@ main()
         // After this tests passes, the camera should have reasonable
         // default property values.
 
-        // Shape and offset are coupled since certain combinations are not valid
-        // given the fixed sensor size, so set a small shape first, followed by
-        // a small offset, then back to the full sensor.
+        // Binning, shape, and offset are coupled since certain combinations do
+        // not define valid regions on the sensor. The following tests cover
+        // some important cases, but not everything.
         
-        // First set the region to be the whole sensor.
+        // First set the region to be the whole sensor at native resolution.
         props.video[0].camera.settings.binning = 1;
         OK(acquire_configure(runtime, &props));
         ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.binning, 1);
@@ -103,42 +103,54 @@ main()
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.x, 0);
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.y, 0);
 
-        // But we can shrink the shape.
+        // But we can shrink the shape and change the offset together.
+        props.video[0].camera.settings.offset = { .x = 120, .y = 100};
         props.video[0].camera.settings.shape = { .x = 960, .y = 600 };
         OK(acquire_configure(runtime, &props));
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 960);
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 600);
-
-        // And now we can change the offset.
-        props.video[0].camera.settings.offset = { .x = 120, .y = 100};
-        OK(acquire_configure(runtime, &props));
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.x, 120);
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.y, 100);
 
-        // Now trying to set the shape back to the full field of view should
-        // partially work, but will be clamped according to the current offset.
+        // Now trying to set the shape should have no effect because the current
+        // offset prevents it.
         props.video[0].camera.settings.shape = { .x = 1920, .y = 1200 };
         OK(acquire_configure(runtime, &props));
-        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 1800);
-        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 1100);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 960);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 600);
 
-        // Reset everything back to the full sensor for testing other settings.
+        // So change the shape and offset together.
         props.video[0].camera.settings.offset = { .x = 0, .y = 0 };
+        props.video[0].camera.settings.shape = { .x = 1920, .y = 1200 };
         OK(acquire_configure(runtime, &props));
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.x, 0);
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.y, 0);
-
-        props.video[0].camera.settings.shape = { .x = 1920, .y = 1200 };
-        OK(acquire_configure(runtime, &props));
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 1920);
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 1200);
 
+        // Trying to set binning while the shape is too large should also do nothing.
         props.video[0].camera.settings.binning = 2;
         OK(acquire_configure(runtime, &props));
+        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.binning, 1);
+
+        // So change binning and shape together.
+        props.video[0].camera.settings.binning = 2;
+        props.video[0].camera.settings.shape = { .x = 960, .y = 600 };
+        OK(acquire_configure(runtime, &props));
         ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.binning, 2);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 960);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 600);
+
+        // Reset the region back to the full sensor at native resolution
+        // before changing other properties.
         props.video[0].camera.settings.binning = 1;
+        props.video[0].camera.settings.shape = { .x = 1920, .y = 1200 };
         OK(acquire_configure(runtime, &props));
         ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.binning, 1);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.x, 0);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.y, 0);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 1920);
+        ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 1200);
 
         props.video[0].camera.settings.pixel_type = SampleType_u16;
         OK(acquire_configure(runtime, &props));

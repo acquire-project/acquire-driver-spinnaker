@@ -445,7 +445,8 @@ SpinnakerCamera::set(struct CameraProperties* properties)
 void
 SpinnakerCamera::maybe_set_roi(
   uint8_t binning,
-  CameraProperties::camera_properties_offset_s offset, CameraProperties::camera_properties_shape_s shape)
+  CameraProperties::camera_properties_offset_s offset,
+  CameraProperties::camera_properties_shape_s shape)
 {
     const uint8_t last_binning = last_known_settings_.binning;
     CameraProperties::camera_properties_offset_s& last_offset =
@@ -462,27 +463,23 @@ SpinnakerCamera::maybe_set_roi(
         return;
     }
 
-    const bool supports_horizontal_binning = IsWritable(camera_->BinningHorizontal);
-    const bool supports_vertical_binning = IsWritable(camera_->BinningVertical);
-
-    // Binning, offset, and shape are dependent properties because they
-    // define the region of interest and pixel sizes of output frames.
-    // We want to set them atomically, but Spinnaker only allows us to
-    // set them one at a time. Therefore, first we make the output region
-    // as small as possible, to allow other values to change.
-    // Then we change them according to a precedence of binning, shape,
-    // then offset.
-    // If resetting does not succeed here, something is very wrong,
-    // so allow this block to throw.
-    if (last_binning != 1) {
-        if (supports_horizontal_binning) {
-            camera_->BinningHorizontal = 1;
-        }
-        if (supports_vertical_binning) {
-            camera_->BinningVertical = 1;
-        }
+    // Otherwise check if the image region is entirely on the sensor.
+    // If it's not, then we log the error and return.
+    const int64_t right = binning * (offset.x + shape.x);
+    const int64_t bottom = binning * (offset.y + shape.y);
+    if (right > camera_->SensorWidth()) {
+        LOGE("Image region is too wide. Rejecting set request.");
+        return;
+    }
+    if (bottom > camera_->SensorHeight()) {
+        LOGE("Image region is too tall. Rejecting set request.");
+        return;
     }
 
+    // Even if the requested image region is valid, the current offset may
+    // prevent us from changing the binning or shape value.
+    // Since a 0 offset should always be valid regardless of the current
+    // binning or shape value, reset it to 0 before changing anything else.
     if (last_offset.x != 0) {
         camera_->OffsetX = 0;
     }
@@ -490,16 +487,10 @@ SpinnakerCamera::maybe_set_roi(
         camera_->OffsetY = 0;
     }
 
-    const int64_t min_width = camera_->Width.GetMin();
-    if (min_width != last_shape.x) {
-        camera_->Width = min_width;
-    }
-    const int64_t min_height = camera_->Height.GetMin();
-    if (min_height != last_shape.y) {
-        camera_->Height = min_height;
-    }
-
     if (binning != last_binning) {
+        const bool supports_horizontal_binning = IsWritable(camera_->BinningHorizontal);
+        const bool supports_vertical_binning = IsWritable(camera_->BinningVertical);
+
         // Some cameras only support setting either horizontal or vertical.
         if (supports_horizontal_binning) {
             set_int_node(camera_->BinningHorizontal, (int64_t)binning);
@@ -514,13 +505,11 @@ SpinnakerCamera::maybe_set_roi(
         last_known_settings_.binning = (uint8_t)node();
     }
 
-    // TODO: these will almost always be true, so I wonder if we should
-    // set the shape to be as small as possible.
-    if (shape.x != min_width) {
+    if (shape.x != last_shape.x) {
         set_int_node(camera_->Width, (int64_t)shape.x);
         last_shape.x = (uint32_t)camera_->Width();
     }
-    if (shape.y != min_height) {
+    if (shape.y != last_shape.y) {
         set_int_node(camera_->Height, (int64_t)shape.y);
         last_shape.y = (uint32_t)camera_->Height();
     }
