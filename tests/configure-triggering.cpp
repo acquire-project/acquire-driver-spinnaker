@@ -101,12 +101,11 @@ main()
         ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.output_triggers.exposure.line, 1);
         ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.output_triggers.exposure.enable, 1);
 
-        // TODO: enable when disabling exposure is supported.
         // Disable exposure output trigger on line 1.
-        //props.video[0].camera.settings.output_triggers.exposure.enable = 0;
-        //OK(acquire_configure(runtime, &props));
-        //ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.output_triggers.exposure.line, 1);
-        //ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.output_triggers.exposure.enable, 0);
+        props.video[0].camera.settings.output_triggers.exposure.enable = 0;
+        OK(acquire_configure(runtime, &props));
+        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.output_triggers.exposure.line, 1);
+        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.output_triggers.exposure.enable, 0);
 
         OK(acquire_shutdown(runtime));
 
