@@ -1,9 +1,9 @@
 # Acquire Driver for Spinnaker
 
-This is an Acquire Driver that exposes a teledyne flir oryx camera using the spinnaker SDK.
+This is an acquire driver that supports some Teledyne FLIR cameras using the Spinnaker SDK.
 
-## Devices
+## Supported devices
 
 ### Camera
 
-- [Oryx 10GigE](https://www.flir.com/products/oryx-10gige/?vertical=machine%20vision&segment=iis)
+- [Blackfly USB3: BFLY-U3-23S6M-C](https://www.flir.com/products/blackfly-usb3/?model=BFLY-U3-23S6M-C&vertical=machine+vision&segment=iis)
