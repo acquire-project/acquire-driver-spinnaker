@@ -21,6 +21,7 @@ else ()
             )
 endif ()
 
+target_add_git_versioning(${tgt})
 set_target_properties(${tgt} PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
         )
