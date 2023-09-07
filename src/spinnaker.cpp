@@ -224,22 +224,39 @@ check_spinnaker_camera_id(uint64_t id)
     EXPECT(id < limit, "Expected an unsigned int device index. Got: %llu", id);
 }
 
+/// @return first enabled trigger or null if no triggers are enabled
+Trigger *
+find_first_enabled_trigger(struct Trigger* triggers) {
+    size_t n_triggers = sizeof(*triggers) / sizeof(struct Trigger);
+    for (int i = 0; i < n_triggers; ++i) {
+        if (triggers[i].enable)
+            return triggers + i;
+    }
+    return nullptr;
+}
+
 Trigger *
 find_first_enabled_input_trigger(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
 {
-    camera->TriggerSelector = genicam_acquisition_start;
-    if (*(camera->TriggerMode) == genicam_on) {
-        return &(properties->input_triggers.acquisition_start);
+    if (IsReadable(camera->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
+        camera->TriggerSelector = genicam_acquisition_start;
+        if (*(camera->TriggerMode) == genicam_on) {
+            return &(properties->input_triggers.acquisition_start);
+        }
     }
 
-    camera->TriggerSelector = genicam_frame_start;
-    if (*(camera->TriggerMode) == genicam_on) {
-        return &(properties->input_triggers.frame_start);
+    if (IsReadable(camera->TriggerSelector.GetEntryByName(genicam_frame_start))) {
+        camera->TriggerSelector = genicam_frame_start;
+        if (*(camera->TriggerMode) == genicam_on) {
+            return &(properties->input_triggers.frame_start);
+        }
     }
 
-    camera->TriggerSelector = genicam_exposure_active;
-    if (*(camera->TriggerMode) == genicam_on) {
-        return &(properties->input_triggers.exposure);
+    if (IsReadable(camera->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
+        camera->TriggerSelector = genicam_exposure_active;
+        if (*(camera->TriggerMode) == genicam_on) {
+            return &(properties->input_triggers.exposure);
+        }
     }
 
     return nullptr;
@@ -524,7 +541,8 @@ SpinnakerCamera::set(struct CameraProperties* properties)
     maybe_set_sample_type_(properties->pixel_type);
     maybe_set_exposure_time_us_(properties->exposure_time_us);
     
-    if (Trigger * target = find_first_enabled_input_trigger(camera_, properties)) {
+    struct Trigger* input_triggers = (struct Trigger *)&properties->input_triggers;
+    if (Trigger * target = find_first_enabled_trigger(input_triggers)) {
         set_enum_node(camera_->TriggerMode, genicam_off);
         // A successful find has the side effect of selecting corresponding trigger in spinnaker
         // so no need to change the TriggerSelector here.
@@ -538,7 +556,8 @@ SpinnakerCamera::set(struct CameraProperties* properties)
                       target->enable ? genicam_on : genicam_off);
     }
 
-    if (Trigger * target = find_first_enabled_output_trigger(camera_, properties)) {
+    struct Trigger* output_triggers = (struct Trigger *)&properties->output_triggers;
+    if (Trigger * target = find_first_enabled_trigger(output_triggers)) {
         set_enum_node(camera_->LineSelector, to_trigger_source(target->line));
         set_enum_node(camera_->LineMode, genicam_output);
         // TODO: need to return corresponding source in find.
