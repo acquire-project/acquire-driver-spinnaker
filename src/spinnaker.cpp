@@ -852,6 +852,7 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
     // The first supported oryx camera has seven (lines 0-6 and software).
     // Therefore, we allow the line numbers to corresponding to their line
     // names and use line 7 for software for all cameras.
+    // TODO: should the software line actually be here?
     meta->digital_lines = {
         .line_count = 8,
         .names = {
@@ -867,6 +868,9 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
     };
 
     memset(&meta->triggers, 0, sizeof(meta->triggers));
+
+    // TODO: should we also pass over TriggerSelector here to determine
+    // other input triggers when the line number is the source for the trigger?
 
     const Spinnaker::GenICam::gcstring original_line = *(camera_->LineSelector);
     for (int i=0; i < meta->digital_lines.line_count; ++i) {
