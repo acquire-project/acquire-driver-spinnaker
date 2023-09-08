@@ -70,7 +70,7 @@ main()
 
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Camera,
-                                    SIZED(".*BFLY.*") - 1,
+                                    SIZED(".*ORX-10GS-51S5M.*") - 1,
                                     &props.video[0].camera.identifier));
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Storage,
@@ -81,18 +81,16 @@ main()
         // Reset the properties to something sensible.
         props.video[0].camera.settings.binning = 1;
         props.video[0].camera.settings.offset = { .x = 0, .y = 0 };
-        props.video[0].camera.settings.shape = { .x = 1920, .y = 1200 };
+        props.video[0].camera.settings.shape = { .x = 2448, .y = 2048 };
         OK(acquire_configure(runtime, &props));
 
         AcquirePropertyMetadata metadata = { 0 };
         OK(acquire_get_configuration_metadata(runtime, &metadata));
         const CameraPropertyMetadata & meta = metadata.video[0].camera;
         
-        // Expected values determined by inspecting blackfly metadata in spinview.
+        // Expected values determined by inspecting oryx metadata in spinview.
 
-        // TODO: sometimes ExposureMode becomes trigger width which means that
-        // ExposureTime is not writable :(
-        //ASSERT_EQ(uint8_t, "%d", meta.exposure_time_us.writable, 1);
+        ASSERT_EQ(uint8_t, "%d", meta.exposure_time_us.writable, 1);
         ASSERT_EQ(int, "%d", meta.exposure_time_us.type, PropertyType_FloatingPrecision);
 
         ASSERT_EQ(uint8_t, "%d", meta.line_interval_us.writable, 0);
@@ -104,13 +102,13 @@ main()
         ASSERT_EQ(int, "%d", meta.binning.type, PropertyType_FixedPrecision);
         
         ASSERT_EQ(uint8_t, "%d", meta.shape.x.writable, 1);
-        ASSERT_EQ(float, "%g", meta.shape.x.low, 4);
-        ASSERT_EQ(float, "%g", meta.shape.x.high, 1920);
+        ASSERT_EQ(float, "%g", meta.shape.x.low, 8);
+        ASSERT_EQ(float, "%g", meta.shape.x.high, 2448);
         ASSERT_EQ(int, "%d", meta.shape.x.type, PropertyType_FixedPrecision);
 
         ASSERT_EQ(uint8_t, "%d", meta.shape.y.writable, 1);
-        ASSERT_EQ(float, "%g", meta.shape.y.low, 2);
-        ASSERT_EQ(float, "%g", meta.shape.y.high, 1200);
+        ASSERT_EQ(float, "%g", meta.shape.y.low, 6);
+        ASSERT_EQ(float, "%g", meta.shape.y.high, 2048);
         ASSERT_EQ(int, "%d", meta.shape.y.type, PropertyType_FixedPrecision);
          
         ASSERT_EQ(uint8_t, "%d", meta.offset.x.writable, 1);
@@ -127,8 +125,8 @@ main()
  
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.acquisition_start.input, 0);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.acquisition_start.output, 0);
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.input, 0);
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b0010);
+        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.input, 0b00100100);
+        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b00110110);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.input, 0);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.output, 0);
 

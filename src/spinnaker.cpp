@@ -868,21 +868,6 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 
     memset(&meta->triggers, 0, sizeof(meta->triggers));
 
-    for (int i=0; i < meta->digital_lines.line_count; ++i) {
-        const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
-        if (IsReadable(camera_->TriggerSource.GetEntryByName(name))) {
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
-                meta->triggers.acquisition_start.input |= (1ULL << i);
-            }
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_frame_start))) {
-                meta->triggers.frame_start.input |= (1ULL << i);
-            }
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
-                meta->triggers.exposure.input |= (1ULL << i);
-            }
-        }
-    }
-
     const Spinnaker::GenICam::gcstring original_line = *(camera_->LineSelector);
     for (int i=0; i < meta->digital_lines.line_count; ++i) {
         const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
@@ -915,13 +900,6 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
         }
     }
     camera_->LineSelector = original_line;
-
-    // Oryx
-    //meta->triggers = {
-    //    .acquisition_start = { .input = 0b10100101, .output = 0 },
-    //    .exposure = { .input = 0b00100100, .output = 0b00110110 },
-    //    .frame_start = { .input = 0b10100101, .output = 0 },
-    //};
 }
 
 void

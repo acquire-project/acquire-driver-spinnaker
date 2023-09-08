@@ -23,6 +23,7 @@ else()
                 blackfly-configure-properties
                 blackfly-configure-triggering
                 blackfly-abort-while-waiting-for-trigger
+                oryx-metadata
                 oryx-one-video-stream
                 oryx-repeat-start
                 oryx-repeat-start-no-stop
