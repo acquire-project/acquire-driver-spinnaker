@@ -225,12 +225,14 @@ check_spinnaker_camera_id(uint64_t id)
 }
 
 /// @return first enabled trigger or null if no triggers are enabled
+template<typename T>
 Trigger *
-find_first_enabled_trigger(struct Trigger* triggers) {
-    size_t n_triggers = sizeof(*triggers) / sizeof(struct Trigger);
+find_first_enabled_trigger(T & triggers) {
+    size_t n_triggers = sizeof(triggers) / sizeof(struct Trigger);
+    auto trigger = (struct Trigger *)&triggers;
     for (int i = 0; i < n_triggers; ++i) {
-        if (triggers[i].enable)
-            return triggers + i;
+        if (trigger[i].enable)
+            return trigger + i;
     }
     return nullptr;
 }
@@ -277,41 +279,39 @@ update_first_enabled_input_trigger(Spinnaker::CameraPtr & camera, struct CameraP
     camera->TriggerSelector = original;
 }
 
-Trigger *
-find_first_enabled_output_trigger(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
+void
+update_output_trigger(Spinnaker::CameraPtr & camera, Trigger & trigger)
 {
-    camera->LineSelector = genicam_acquisition_start;
-    if (*(camera->TriggerMode) == genicam_on) {
-        return &(properties->input_triggers.acquisition_start);
-    }
-
-    camera->TriggerSelector = genicam_frame_start;
-    if (*(camera->TriggerMode) == genicam_on) {
-        return &(properties->input_triggers.frame_start);
-    }
-
-    camera->TriggerSelector = genicam_exposure_active;
-    if (*(camera->TriggerMode) == genicam_on) {
-        return &(properties->input_triggers.exposure);
-    }
-
-    return nullptr;
+    trigger.kind = Signal_Output;
+    trigger.enable = true;
+    trigger.line = to_trigger_line(*(camera->LineSelector));
+    // TODO: infer actual edge type.
+    trigger.edge = TriggerEdge_LevelHigh;
 }
 
 void
-update_first_enabled_output_trigger(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
+update_all_output_triggers(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
 {
     memset(&properties->output_triggers, 0, sizeof(properties->output_triggers));
     const Spinnaker::GenICam::gcstring original = *(camera->LineSelector);
+
     // TODO: make this no-throw so we always reset.
-    if (Trigger * trigger = find_first_enabled_output_trigger(camera, properties)) {
-        trigger->kind = Signal_Output;
-        trigger->enable = true;
-        trigger->line = to_trigger_line(*(camera->LineSource));
-        // TODO: infer actual edge type.
-        trigger->edge = TriggerEdge_LevelHigh;
+    Spinnaker::GenApi::StringList_t lines;
+    camera->LineSelector.GetSymbolics(lines);
+    for (auto & line : lines) {
+        camera->LineSelector = line;
+        if (*(camera->LineMode) == genicam_output) {
+            if (*(camera->LineSource) == genicam_exposure_active) {
+                update_output_trigger(camera, properties->output_triggers.exposure);
+            } else if (*(camera->LineSource) == genicam_frame_start) {
+                update_output_trigger(camera, properties->output_triggers.frame_start);
+            } else if (*(camera->LineSource) == genicam_trigger_wait) {
+                update_output_trigger(camera, properties->output_triggers.trigger_wait);
+            }
+        }
     }
-    camera->TriggerSelector = original;
+
+    camera->LineSelector = original;
 }
 
 //
@@ -514,8 +514,8 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
     // Acquire only supports certain values of some node values, so set these
     // once on initialization before getting or setting any other node values
     // which may depend on them.
-    set_enum_node(camera_->ExposureAuto, genicam_off);
     set_enum_node(camera_->ExposureMode, genicam_timed);
+    set_enum_node(camera_->ExposureAuto, genicam_off);
 
     get(&last_known_settings_);
 }
@@ -541,11 +541,23 @@ SpinnakerCamera::set(struct CameraProperties* properties)
     maybe_set_sample_type_(properties->pixel_type);
     maybe_set_exposure_time_us_(properties->exposure_time_us);
     
-    struct Trigger* input_triggers = (struct Trigger *)&properties->input_triggers;
-    if (Trigger * target = find_first_enabled_trigger(input_triggers)) {
+    if (Trigger * target = find_first_enabled_trigger(properties->input_triggers)) {
         set_enum_node(camera_->TriggerMode, genicam_off);
-        // A successful find has the side effect of selecting corresponding trigger in spinnaker
-        // so no need to change the TriggerSelector here.
+
+        if (target == &properties->input_triggers.acquisition_start) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
+                set_enum_node(camera_->TriggerSelector, genicam_acquisition_start);
+            }
+        } else if (target == &properties->input_triggers.frame_start) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_frame_start))) {
+                set_enum_node(camera_->TriggerSelector, genicam_frame_start);
+            }
+        } else if (target == &properties->input_triggers.exposure) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
+                set_enum_node(camera_->TriggerSelector, genicam_exposure_active);
+            }
+        }
+
         set_enum_node(camera_->TriggerSource, to_trigger_source(target->line));
         // TODO: not settable for oryx when this is software. Is this the same
         // for the blackfly?
@@ -554,14 +566,33 @@ SpinnakerCamera::set(struct CameraProperties* properties)
         }
         set_enum_node(camera_->TriggerMode,
                       target->enable ? genicam_on : genicam_off);
+    } else {
+        // Disable all triggers.
+        set_enum_node(camera_->TriggerMode, genicam_off);
+        for (auto & selector : {genicam_acquisition_start, genicam_frame_start, genicam_exposure_active}) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(selector))) {
+                set_enum_node(camera_->TriggerSelector, selector);
+                set_enum_node(camera_->TriggerMode, genicam_off);
+            }
+        }
     }
 
-    struct Trigger* output_triggers = (struct Trigger *)&properties->output_triggers;
-    if (Trigger * target = find_first_enabled_trigger(output_triggers)) {
+    if (Trigger * target = find_first_enabled_trigger(properties->output_triggers)) {
         set_enum_node(camera_->LineSelector, to_trigger_source(target->line));
         set_enum_node(camera_->LineMode, genicam_output);
-        // TODO: need to return corresponding source in find.
-        set_enum_node(camera_->LineSource, genicam_exposure_active);
+        if (target == &properties->output_triggers.exposure) {
+            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_exposure_active))) {
+                set_enum_node(camera_->LineSource, genicam_exposure_active);
+            }
+        } else if (target == &properties->output_triggers.frame_start) {
+            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_frame_start))) {
+                set_enum_node(camera_->LineSource, genicam_frame_start);
+            }
+        } else if (target == &properties->output_triggers.trigger_wait) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_trigger_wait))) {
+                set_enum_node(camera_->LineSource, genicam_trigger_wait);
+            }
+        }
     }
 }
 
@@ -662,6 +693,11 @@ void
 SpinnakerCamera::maybe_set_exposure_time_us_(float target_us)
 {
     if (target_us != last_known_settings_.exposure_time_us) {
+        // TODO: needed here because changing other things (like the triggers/lines)
+        // can cause the exposure mode to be trigger width.
+        // If this is really needed here, then maybe remove it on construction.
+        set_enum_node(camera_->ExposureMode, genicam_timed);
+        set_enum_node(camera_->ExposureAuto, genicam_off);
         set_float_node(camera_->ExposureTime, (double)target_us);
         last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
     }
@@ -751,7 +787,7 @@ SpinnakerCamera::get(struct CameraProperties* properties)
     };
 
     update_first_enabled_input_trigger(camera_, properties);
-    update_first_enabled_output_trigger(camera_, properties);
+    update_all_output_triggers(camera_, properties);
 
     last_known_settings_ = *properties;
 }
@@ -869,17 +905,17 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
     };
 
     // Blackfly
-    //meta->triggers = {
-    //    .exposure = { .input = 0, .output = 0b0010 },
-    //    .frame_start = { .input = 0b10000001, .output = 0 },
-    //};
+    meta->triggers = {
+        .exposure = { .input = 0, .output = 0b0010 },
+        .frame_start = { .input = 0b10000001, .output = 0 },
+    };
 
     // Oryx
-    meta->triggers = {
-        .acquisition_start = { .input = 0b10100101, .output = 0 },
-        .exposure = { .input = 0b00100100, .output = 0b00110110 },
-        .frame_start = { .input = 0b10100101, .output = 0 },
-    };
+    //meta->triggers = {
+    //    .acquisition_start = { .input = 0b10100101, .output = 0 },
+    //    .exposure = { .input = 0b00100100, .output = 0b00110110 },
+    //    .frame_start = { .input = 0b10100101, .output = 0 },
+    //};
 }
 
 void
