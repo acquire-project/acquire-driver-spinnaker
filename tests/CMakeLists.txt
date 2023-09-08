@@ -16,6 +16,7 @@ else()
         #
         set(tests
                 list-devices
+                blackfly-metadata
                 blackfly-one-video-stream
                 blackfly-repeat-start
                 blackfly-repeat-start-no-stop

@@ -84,6 +84,7 @@ main()
         // First set the region to be the whole sensor at native resolution.
         props.video[0].camera.settings.binning = 1;
         props.video[0].camera.settings.offset = { .x = 0, .y = 0 };
+        props.video[0].camera.settings.shape = { .x = 1920, .y = 1200 };
         OK(acquire_configure(runtime, &props));
         ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.binning, 1);
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.x, 0);

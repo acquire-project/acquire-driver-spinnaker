@@ -46,6 +46,7 @@ const Spinnaker::GenICam::gcstring genicam_acquisition_start("AcquisitionStart")
 const Spinnaker::GenICam::gcstring genicam_frame_start("FrameStart");
 const Spinnaker::GenICam::gcstring genicam_line_1("Line1");
 const Spinnaker::GenICam::gcstring genicam_software("Software");
+const Spinnaker::GenICam::gcstring genicam_input("Input");
 const Spinnaker::GenICam::gcstring genicam_output("Output");
 const Spinnaker::GenICam::gcstring genicam_exposure_active("ExposureActive");
 const Spinnaker::GenICam::gcstring genicam_trigger_wait("FrameTriggerWait");
@@ -348,7 +349,7 @@ struct SpinnakerCamera final : private Camera
 
     void set(struct CameraProperties* properties);
     void get(struct CameraProperties* properties);
-    void get_meta(struct CameraPropertyMetadata* meta) const;
+    void get_meta(struct CameraPropertyMetadata* meta);
     void get_shape(struct ImageShape* shape) const;
     void start();
     void stop();
@@ -372,7 +373,7 @@ struct SpinnakerCamera final : private Camera
     void query_roi_offset_capabilities_(CameraPropertyMetadata* meta) const;
     void query_roi_shape_capabilities_(CameraPropertyMetadata* meta) const;
     void query_pixel_type_capabilities_(CameraPropertyMetadata* meta) const;
-    static void query_triggering_capabilities_(CameraPropertyMetadata* meta);
+    void query_triggering_capabilities_(CameraPropertyMetadata* meta);
 
     void maybe_set_roi_(uint8_t binning,
                         CameraProperties::camera_properties_offset_s offset,
@@ -751,7 +752,7 @@ SpinnakerCamera::get(struct CameraProperties* properties)
 }
 
 void
-SpinnakerCamera::get_meta(struct CameraPropertyMetadata* meta) const
+SpinnakerCamera::get_meta(struct CameraPropertyMetadata* meta)
 {
     const std::scoped_lock lock(lock_);
     query_exposure_time_capabilities_(meta);
@@ -837,17 +838,20 @@ SpinnakerCamera::query_pixel_type_capabilities_(
     camera_->PixelFormat.GetSymbolics(pixel_formats);
     for (const Spinnaker::GenICam::gcstring format : pixel_formats) {
         const SampleType sample_type = to_sample_type(format);
-        meta->supported_pixel_types |= (1ULL << sample_type);
+        if (sample_type != SampleType_Unknown) {
+            meta->supported_pixel_types |= (1ULL << sample_type);
+        }
     }
 }
 
 void
 SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 {
-    // These are based on inspection of blackfly camera properties in SpinView.
-    // ExposureActive can be selected using the Trigger Selector in SpinView,
-    // but Spinnaker does not have a corresponding enum value in
-    // TriggerSelectorEnums, so do not enable it as an input trigger.
+    // Acquire can represent at most 8 lines.
+    // The first supported blackfly camera only has two (line0 and software).
+    // The first supported oryx camera has seven (lines 0-6 and software).
+    // Therefore, we allow the line numbers to corresponding to their line
+    // names and use line 7 for software for all cameras.
     meta->digital_lines = {
         .line_count = 8,
         .names = {
@@ -862,18 +866,62 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
         },
     };
 
-    // Blackfly
-    //meta->triggers = {
-    //    .exposure = { .input = 0, .output = 0b0010 },
-    //    .frame_start = { .input = 0b10000001, .output = 0 },
-    //};
+    memset(&meta->triggers, 0, sizeof(meta->triggers));
+
+    for (int i=0; i < meta->digital_lines.line_count; ++i) {
+        const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
+        if (IsReadable(camera_->TriggerSource.GetEntryByName(name))) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
+                meta->triggers.acquisition_start.input |= (1ULL << i);
+            }
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_frame_start))) {
+                meta->triggers.frame_start.input |= (1ULL << i);
+            }
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
+                meta->triggers.exposure.input |= (1ULL << i);
+            }
+        }
+    }
+
+    const Spinnaker::GenICam::gcstring original_line = *(camera_->LineSelector);
+    for (int i=0; i < meta->digital_lines.line_count; ++i) {
+        const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
+        if (IsReadable(camera_->LineSelector.GetEntryByName(name))) {
+            camera_->LineSelector = name;
+            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_acquisition_start))) {
+                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_input))) {
+                    meta->triggers.acquisition_start.input |= (1ULL << i);
+                }
+                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_output))) {
+                    meta->triggers.acquisition_start.output |= (1ULL << i);
+                }
+            }
+            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_frame_start))) {
+                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_input))) {
+                    meta->triggers.frame_start.input |= (1ULL << i);
+                }
+                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_output))) {
+                    meta->triggers.frame_start.output |= (1ULL << i);
+                }
+            }
+            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_exposure_active))) {
+                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_input))) {
+                    meta->triggers.exposure.input |= (1ULL << i);
+                }
+                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_output))) {
+                    meta->triggers.exposure.output |= (1ULL << i);
+                }
+            }
+        }
+    }
+    camera_->LineSelector = original_line;
 
     // Oryx
-    meta->triggers = {
-        .acquisition_start = { .input = 0b10100101, .output = 0 },
-        .exposure = { .input = 0b00100100, .output = 0b00110110 },
-        .frame_start = { .input = 0b10100101, .output = 0 },
-    };
+    //meta->triggers = {
+    //    .acquisition_start = { .input = 0b10100101, .output = 0 },
+    //    .exposure = { .input = 0b00100100, .output = 0b00110110 },
+    //    .frame_start = { .input = 0b10100101, .output = 0 },
+    //};
 }
 
 void
