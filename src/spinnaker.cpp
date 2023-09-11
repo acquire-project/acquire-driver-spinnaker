@@ -848,11 +848,10 @@ void
 SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 {
     // Acquire can represent at most 8 lines.
-    // The first supported blackfly camera only has two (line0 and software).
+    // The first supported blackfly camera only has two (line 0 and software).
     // The first supported oryx camera has seven (lines 0-6 and software).
     // Therefore, we allow the line numbers to corresponding to their line
     // names and use line 7 for software for all cameras.
-    // TODO: should the software line actually be here?
     meta->digital_lines = {
         .line_count = 8,
         .names = {
@@ -869,37 +868,37 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 
     memset(&meta->triggers, 0, sizeof(meta->triggers));
 
-    // TODO: should we also pass over TriggerSelector here to determine
-    // other input triggers when the line number is the source for the trigger?
+    for (int i=0; i < meta->digital_lines.line_count; ++i) {
+        const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
+        if (IsReadable(camera_->TriggerSource.GetEntryByName(name))) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
+                meta->triggers.acquisition_start.input |= (1ULL << i);
+            }
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_frame_start))) {
+                meta->triggers.frame_start.input |= (1ULL << i);
+            }
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
+                meta->triggers.exposure.input |= (1ULL << i);
+            }
+        }
+    }
 
     const Spinnaker::GenICam::gcstring original_line = *(camera_->LineSelector);
     for (int i=0; i < meta->digital_lines.line_count; ++i) {
         const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
         if (IsReadable(camera_->LineSelector.GetEntryByName(name))) {
             camera_->LineSelector = name;
-            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_acquisition_start))) {
-                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_input))) {
-                    meta->triggers.acquisition_start.input |= (1ULL << i);
-                }
-                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_output))) {
+            if (IsReadable(camera_->LineMode.GetEntryByName(genicam_output))) {
+                if (IsReadable(camera_->LineSource.GetEntryByName(genicam_acquisition_start))) {
                     meta->triggers.acquisition_start.output |= (1ULL << i);
                 }
-            }
-            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_frame_start))) {
-                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_input))) {
-                    meta->triggers.frame_start.input |= (1ULL << i);
-                }
-                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_output))) {
+                if (IsReadable(camera_->LineSource.GetEntryByName(genicam_frame_start))) {
                     meta->triggers.frame_start.output |= (1ULL << i);
                 }
-            }
-            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_exposure_active))) {
-                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_input))) {
-                    meta->triggers.exposure.input |= (1ULL << i);
-                }
-                if (IsReadable(camera_->LineMode.GetEntryByName(genicam_output))) {
+                if (IsReadable(camera_->LineSource.GetEntryByName(genicam_exposure_active))) {
                     meta->triggers.exposure.output |= (1ULL << i);
                 }
+                // TODO: what about trigger_wait?
             }
         }
     }

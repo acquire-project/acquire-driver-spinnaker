@@ -127,9 +127,9 @@ main()
  
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.acquisition_start.input, 0);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.acquisition_start.output, 0);
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.input, 0);
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b0010);
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.input, 0);
+        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.input, 0b1000'0001);
+        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b0000'0010);
+        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.input, 0b1000'0001);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.output, 0);
 
         OK(acquire_shutdown(runtime));

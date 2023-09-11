@@ -123,11 +123,11 @@ main()
  
         ASSERT_EQ(unsigned int, "0x%x", (unsigned int)meta.supported_pixel_types, (1U << SampleType_u8) | (1U << SampleType_u16));
  
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.acquisition_start.input, 0);
+        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.acquisition_start.input, 0b1010'1101);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.acquisition_start.output, 0);
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.input, 0b00100100);
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b00110110);
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.input, 0);
+        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.input, 0);
+        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b0011'0110);
+        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.input, 0b1010'1101);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.output, 0);
 
         OK(acquire_shutdown(runtime));
