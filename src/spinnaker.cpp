@@ -238,99 +238,84 @@ find_first_enabled_trigger(T & triggers) {
     return nullptr;
 }
 
-Trigger *
-find_enabled_input_trigger(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
+void
+update_input_trigger(Spinnaker::CameraPtr & camera, Trigger & trigger)
 {
-    if (*(camera->TriggerMode) == genicam_on) {
-        const Spinnaker::GenICam::gcstring selected = *(camera->TriggerSelector);
-        if (selected == genicam_acquisition_start) {
-            return &(properties->input_triggers.acquisition_start);
-        } else if (selected == genicam_frame_start) {
-            return &(properties->input_triggers.frame_start);
-        } else if (selected == genicam_exposure_active) {
-            return &(properties->input_triggers.exposure);
-        }
-    }
-    return nullptr;
+    trigger.kind = Signal_Input;
+    trigger.enable = true;
+    trigger.line = to_trigger_line(*(camera->TriggerSource));
+    // TriggerActivation can be non-readable when using the Software
+    // trigger for some cameras (e.g. Oryx).
+    trigger.edge = IsReadable(camera->TriggerActivation)
+                      ? to_trigger_edge(*(camera->TriggerActivation))
+                      : TriggerEdge_Unknown;
 }
 
 void
-update_first_enabled_input_trigger(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
+update_input_triggers(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
 {
+    // Zero out all the input triggers, then only update the enabled one if present.
     memset(&properties->input_triggers, 0, sizeof(properties->input_triggers));
-    if (!(IsReadable(camera->TriggerSelector) && IsWritable(camera->TriggerSelector))) {
-        LOGE("TriggerSelector is not readable and writable. Abandoning all hope.");
-        return;
-    }
-    const Spinnaker::GenICam::gcstring original = *(camera->TriggerSelector);
-    try {
-        if (Trigger * trigger = find_enabled_input_trigger(camera, properties)) {
-            trigger->kind = Signal_Input;
-            trigger->enable = true;
-            trigger->line = to_trigger_line(*(camera->TriggerSource));
-            trigger->edge = IsReadable(camera->TriggerActivation) ? to_trigger_edge(*(camera->TriggerActivation)) : TriggerEdge_Unknown;
+    
+    // TODO: the Oryx can have multiple triggers in different states, whereas the blackfly
+    // cannot. This logic is simple for the blackfly, but may not be suitable for the oryx.
+    if (*(camera->TriggerMode) == genicam_on) {
+        const Spinnaker::GenICam::gcstring trigger = *(camera->TriggerSelector);
+        if (trigger == genicam_acquisition_start) {
+            update_input_trigger(camera, properties->input_triggers.acquisition_start);
+        } else if (trigger == genicam_frame_start) {
+            update_input_trigger(camera, properties->input_triggers.frame_start);
+        } else if (trigger == genicam_exposure_active) {
+            update_input_trigger(camera, properties->input_triggers.exposure);
         }
-    } catch (const std::exception& exc) {
-        LOGE("Exception: %s\n", exc.what());
-    } catch (...) {
-        LOGE("Exception: (unknown)");
     }
-    camera->TriggerSelector = original;
 }
 
 void
 update_output_trigger(Spinnaker::CameraPtr & camera, Trigger & trigger)
 {
     trigger.kind = Signal_Output;
-    trigger.enable = IsReadable(camera->LineMode) && *(camera->LineMode) == genicam_output;
+    trigger.enable = true;
     trigger.line = to_trigger_line(*(camera->LineSelector));
-    trigger.edge = IsReadable(camera->LineInverter) && camera->LineInverter()
+    trigger.edge = camera->LineInverter()
                      ? TriggerEdge_LevelLow
                      : TriggerEdge_LevelHigh;
 }
 
 void
-update_all_output_triggers(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
+update_output_triggers(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
 {
+    // Zero out all the output triggers.
     memset(&properties->output_triggers, 0, sizeof(properties->output_triggers));
-    if (!(IsReadable(camera->LineSelector) && IsWritable(camera->LineSelector))) {
-        LOGE("LineSelector is not readable and writable. Abandoning all hope.");
-        return;
-    }
 
-    const Spinnaker::GenICam::gcstring original = *(camera->LineSelector);
-    try {
-        Spinnaker::GenApi::StringList_t lines;
-        camera->LineSelector.GetSymbolics(lines);
-        auto& triggers = properties->output_triggers;
-        for (auto& line : lines) {
-            camera->LineSelector = line;
-            // TODO: verify if line mode is always safe to read.
-            // It's possible that when a line is being used for input,
-            // the line mode may not be readable (based on spinview behavior).
-            if (*(camera->LineMode) != genicam_output) {
-                continue;
-            }
-            const Spinnaker::GenICam::gcstring source = *(camera->LineSource);
-            // Spinnaker allows us to use the same source for multiple output
-            // lines, so only use the first output line found.
-            if (!triggers.exposure.enable &&
-                source == genicam_exposure_active) {
-                update_output_trigger(camera, triggers.exposure);
-            } else if (!triggers.frame_start.enable &&
-                       source == genicam_frame_start) {
-                update_output_trigger(camera, triggers.frame_start);
-            } else if (!triggers.trigger_wait.enable &&
-                       source == genicam_trigger_wait) {
-                update_output_trigger(camera, triggers.trigger_wait);
-            }
+    // Iterate over all the lines, allowing multiple output triggers to be
+    // enabled on the Acquire side.
+    Spinnaker::GenApi::StringList_t lines;
+    camera->LineSelector.GetSymbolics(lines);
+    auto& triggers = properties->output_triggers;
+    for (auto& line : lines) {
+        camera->LineSelector = line;
+        
+        // Some lines do not have a readable LineMode (e.g. Oryx Line 6), so treat
+        // these as non-output lines.
+        if (!IsReadable(camera->LineMode) || *(camera->LineMode) != genicam_output) {
+            continue;
         }
-    } catch (const std::exception& exc) {
-        LOGE("Exception: %s\n", exc.what());
-    } catch (...) {
-        LOGE("Exception: (unknown)");
+
+        // Spinnaker allows us to use the same source for multiple output
+        // lines, so only enable each trigger for the first line found.
+        const Spinnaker::GenICam::gcstring source = *(camera->LineSource);
+        if (!triggers.exposure.enable &&
+            source == genicam_exposure_active) {
+            update_output_trigger(camera, triggers.exposure);
+        } else if (!triggers.frame_start.enable &&
+                   source == genicam_frame_start) {
+            update_output_trigger(camera, triggers.frame_start);
+        } else if (!triggers.trigger_wait.enable &&
+                   source == genicam_trigger_wait) {
+            update_output_trigger(camera, triggers.trigger_wait);
+        }
     }
-    camera->LineSelector = original;
 }
 
 //
@@ -701,17 +686,17 @@ SpinnakerCamera::maybe_set_input_trigger_(struct CameraProperties * properties)
         }
 
         set_enum_node(camera_->TriggerSource, to_trigger_source(target->line));
-        // When using a software trigger, TriggerActivation is writable for the blackfly,
-        // but not for the oryx. Therefore, only change this if we can.
-        if ((*(camera_->TriggerSource) == genicam_software) && IsWritable(camera_->TriggerActivation)) {
+        // TriggerActivation can be non-writable when using the Software trigger for
+        // some cameras (e.g. Oryx).
+        if (IsWritable(camera_->TriggerActivation)) {
             set_enum_node(camera_->TriggerActivation, to_trigger_activation(target->edge));
         }
         set_enum_node(camera_->TriggerMode,
                       target->enable ? genicam_on : genicam_off);
     } else {
-        // Some triggers can cause ExposureMode to be changed to TriggerWidth.
-        // If no triggers are enabled, ensure we are using a timed exposure,
-        // so that ExposureTime can be forcibly set using Acquire alone.
+        // Some triggers can cause ExposureMode to be changed to TriggerWidth (e.g. ExposureActive).
+        // If no triggers are enabled, ensure we are using a timed exposure, so that ExposureTime
+        // can be forcibly set using Acquire alone.
         set_enum_node(camera_->ExposureMode, genicam_timed);
     }
 }
@@ -758,8 +743,8 @@ SpinnakerCamera::get(struct CameraProperties* properties)
         },
     };
 
-    update_first_enabled_input_trigger(camera_, properties);
-    update_all_output_triggers(camera_, properties);
+    update_input_triggers(camera_, properties);
+    update_output_triggers(camera_, properties);
 
     last_known_settings_ = *properties;
 }
