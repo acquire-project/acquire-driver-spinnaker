@@ -239,29 +239,18 @@ find_first_enabled_trigger(T & triggers) {
 }
 
 Trigger *
-find_first_enabled_input_trigger(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
+find_enabled_input_trigger(Spinnaker::CameraPtr & camera, struct CameraProperties* properties)
 {
-    if (IsReadable(camera->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
-        camera->TriggerSelector = genicam_acquisition_start;
-        if (*(camera->TriggerMode) == genicam_on) {
+    if (*(camera->TriggerMode) == genicam_on) {
+        const Spinnaker::GenICam::gcstring selected = *(camera->TriggerSelector);
+        if (selected == genicam_acquisition_start) {
             return &(properties->input_triggers.acquisition_start);
-        }
-    }
-
-    if (IsReadable(camera->TriggerSelector.GetEntryByName(genicam_frame_start))) {
-        camera->TriggerSelector = genicam_frame_start;
-        if (*(camera->TriggerMode) == genicam_on) {
+        } else if (selected == genicam_frame_start) {
             return &(properties->input_triggers.frame_start);
-        }
-    }
-
-    if (IsReadable(camera->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
-        camera->TriggerSelector = genicam_exposure_active;
-        if (*(camera->TriggerMode) == genicam_on) {
+        } else if (selected == genicam_exposure_active) {
             return &(properties->input_triggers.exposure);
         }
     }
-
     return nullptr;
 }
 
@@ -275,7 +264,7 @@ update_first_enabled_input_trigger(Spinnaker::CameraPtr & camera, struct CameraP
     }
     const Spinnaker::GenICam::gcstring original = *(camera->TriggerSelector);
     try {
-        if (Trigger * trigger = find_first_enabled_input_trigger(camera, properties)) {
+        if (Trigger * trigger = find_enabled_input_trigger(camera, properties)) {
             trigger->kind = Signal_Input;
             trigger->enable = true;
             trigger->line = to_trigger_line(*(camera->TriggerSource));
@@ -316,6 +305,12 @@ update_all_output_triggers(Spinnaker::CameraPtr & camera, struct CameraPropertie
         auto& triggers = properties->output_triggers;
         for (auto& line : lines) {
             camera->LineSelector = line;
+            // TODO: verify if line mode is always safe to read.
+            // It's possible that when a line is being used for input,
+            // the line mode may not be readable (based on spinview behavior).
+            if (*(camera->LineMode) != genicam_output) {
+                continue;
+            }
             const Spinnaker::GenICam::gcstring source = *(camera->LineSource);
             // Spinnaker allows us to use the same source for multiple output
             // lines, so only use the first output line found.
@@ -380,6 +375,8 @@ struct SpinnakerCamera final : private Camera
                         CameraProperties::camera_properties_shape_s shape);
     void maybe_set_sample_type_(SampleType target);
     void maybe_set_exposure_time_us_(float target_us);
+    void maybe_set_input_trigger_(struct CameraProperties * properties);
+    void maybe_set_output_trigger_(struct CameraProperties * properties);
 };
 
 //
@@ -558,65 +555,11 @@ SpinnakerCamera::set(struct CameraProperties* properties)
     const std::scoped_lock lock(lock_);
     maybe_set_roi_(properties->binning, properties->offset, properties->shape);
     maybe_set_sample_type_(properties->pixel_type);
+    maybe_set_input_trigger_(properties);
+    maybe_set_output_trigger_(properties);
+
+    // Setting exposure time may not be compatible with certain triggers (e.g. ExposureActive), so set it last.
     maybe_set_exposure_time_us_(properties->exposure_time_us);
-    
-    // First turn triggering off before any other configuration as in
-    // Spinnaker's Trigger.cpp example.
-    set_enum_node(camera_->TriggerMode, genicam_off);
-    
-    // First disable all triggering.
-    Spinnaker::GenApi::StringList_t selectors;
-    camera_->TriggerSelector.GetSymbolics(selectors);
-    for (const auto & selector : selectors) {
-        set_enum_node(camera_->TriggerSelector, selector);
-        set_enum_node(camera_->TriggerMode, genicam_off);
-    }
-    
-    // Then use the first trigger enabled in acquire.
-    auto & input_triggers = properties->input_triggers;
-    if (Trigger * target = find_first_enabled_trigger(input_triggers)) {
-        if (target == &input_triggers.acquisition_start) {
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
-                set_enum_node(camera_->TriggerSelector, genicam_acquisition_start);
-            }
-        } else if (target == &input_triggers.frame_start) {
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_frame_start))) {
-                set_enum_node(camera_->TriggerSelector, genicam_frame_start);
-            }
-        } else if (target == &input_triggers.exposure) {
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
-                set_enum_node(camera_->TriggerSelector, genicam_exposure_active);
-            }
-        }
-
-        set_enum_node(camera_->TriggerSource, to_trigger_source(target->line));
-        // TODO: not settable for oryx when this is software. Is this the same
-        // for the blackfly?
-        if (*(camera_->TriggerSource) != genicam_software) {
-            set_enum_node(camera_->TriggerActivation, to_trigger_activation(target->edge));
-        }
-        set_enum_node(camera_->TriggerMode,
-                      target->enable ? genicam_on : genicam_off);
-    }
-
-    auto & output_triggers = properties->output_triggers;
-    if (Trigger * target = find_first_enabled_trigger(output_triggers)) {
-        set_enum_node(camera_->LineSelector, to_trigger_source(target->line));
-        set_enum_node(camera_->LineMode, genicam_output);
-        if (target == &output_triggers.exposure) {
-            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_exposure_active))) {
-                set_enum_node(camera_->LineSource, genicam_exposure_active);
-            }
-        } else if (target == &output_triggers.frame_start) {
-            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_frame_start))) {
-                set_enum_node(camera_->LineSource, genicam_frame_start);
-            }
-        } else if (target == &output_triggers.trigger_wait) {
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_trigger_wait))) {
-                set_enum_node(camera_->LineSource, genicam_trigger_wait);
-            }
-        }
-    }
 }
 
 void
@@ -716,13 +659,83 @@ void
 SpinnakerCamera::maybe_set_exposure_time_us_(float target_us)
 {
     if (target_us != last_known_settings_.exposure_time_us) {
-        // TODO: needed here because changing other things (like the triggers/lines)
-        // can cause the exposure mode to be trigger width.
-        // If this is really needed here, then maybe remove it on construction.
+        if (*(camera_->TriggerSelector) == genicam_exposure_active) {
+            LOGE("Cannot set exposure time when using ExposureActive trigger.");
+        } else {
+            set_float_node(camera_->ExposureTime, (double)target_us);
+            last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
+        }
+    }
+}
+
+void
+SpinnakerCamera::maybe_set_input_trigger_(struct CameraProperties * properties)
+{
+    // First turn triggering off before any other configuration as in
+    // Spinnaker's Trigger.cpp example.
+    set_enum_node(camera_->TriggerMode, genicam_off);
+    
+    // Then disable all triggering.
+    Spinnaker::GenApi::StringList_t selectors;
+    camera_->TriggerSelector.GetSymbolics(selectors);
+    for (const auto & selector : selectors) {
+        set_enum_node(camera_->TriggerSelector, selector);
+        set_enum_node(camera_->TriggerMode, genicam_off);
+    }
+    
+    // Finally, use the first trigger enabled in acquire, if any.
+    auto & input_triggers = properties->input_triggers;
+    if (Trigger * target = find_first_enabled_trigger(input_triggers)) {
+        if (target == &input_triggers.acquisition_start) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
+                set_enum_node(camera_->TriggerSelector, genicam_acquisition_start);
+            }
+        } else if (target == &input_triggers.frame_start) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_frame_start))) {
+                set_enum_node(camera_->TriggerSelector, genicam_frame_start);
+            }
+        } else if (target == &input_triggers.exposure) {
+            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
+                set_enum_node(camera_->TriggerSelector, genicam_exposure_active);
+            }
+        }
+
+        set_enum_node(camera_->TriggerSource, to_trigger_source(target->line));
+        // When using a software trigger, TriggerActivation is writable for the blackfly,
+        // but not for the oryx. Therefore, only change this if we can.
+        if ((*(camera_->TriggerSource) == genicam_software) && IsWritable(camera_->TriggerActivation)) {
+            set_enum_node(camera_->TriggerActivation, to_trigger_activation(target->edge));
+        }
+        set_enum_node(camera_->TriggerMode,
+                      target->enable ? genicam_on : genicam_off);
+    } else {
+        // Some triggers can cause ExposureMode to be changed to TriggerWidth.
+        // If no triggers are enabled, ensure we are using a timed exposure,
+        // so that ExposureTime can be forcibly set using Acquire alone.
         set_enum_node(camera_->ExposureMode, genicam_timed);
-        set_enum_node(camera_->ExposureAuto, genicam_off);
-        set_float_node(camera_->ExposureTime, (double)target_us);
-        last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
+    }
+}
+
+void
+SpinnakerCamera::maybe_set_output_trigger_(struct CameraProperties * properties)
+{
+    auto & output_triggers = properties->output_triggers;
+    if (Trigger * target = find_first_enabled_trigger(output_triggers)) {
+        set_enum_node(camera_->LineSelector, to_trigger_source(target->line));
+        set_enum_node(camera_->LineMode, genicam_output);
+        if (target == &output_triggers.exposure) {
+            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_exposure_active))) {
+                set_enum_node(camera_->LineSource, genicam_exposure_active);
+            }
+        } else if (target == &output_triggers.frame_start) {
+            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_frame_start))) {
+                set_enum_node(camera_->LineSource, genicam_frame_start);
+            }
+        } else if (target == &output_triggers.trigger_wait) {
+            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_trigger_wait))) {
+                set_enum_node(camera_->LineSource, genicam_trigger_wait);
+            }
+        }
     }
 }
 

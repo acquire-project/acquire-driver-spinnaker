@@ -89,10 +89,7 @@ main()
         const CameraPropertyMetadata & meta = metadata.video[0].camera;
         
         // Expected values determined by inspecting blackfly metadata in spinview.
-
-        // TODO: sometimes ExposureMode becomes trigger width which means that
-        // ExposureTime is not writable :(
-        //ASSERT_EQ(uint8_t, "%d", meta.exposure_time_us.writable, 1);
+        ASSERT_EQ(uint8_t, "%d", meta.exposure_time_us.writable, 1);
         ASSERT_EQ(int, "%d", meta.exposure_time_us.type, PropertyType_FloatingPrecision);
 
         ASSERT_EQ(uint8_t, "%d", meta.line_interval_us.writable, 0);
