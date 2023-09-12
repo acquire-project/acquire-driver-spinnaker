@@ -511,13 +511,6 @@ SpinnakerCamera::SpinnakerCamera(Spinnaker::CameraPtr camera)
   , started_(false)
 {
     camera->Init();
-
-    // Acquire only supports certain values of some node values, so set these
-    // once on initialization before getting or setting any other node values
-    // which may depend on them.
-    set_enum_node(camera_->ExposureMode, genicam_timed);
-    set_enum_node(camera_->ExposureAuto, genicam_off);
-
     get(&last_known_settings_);
 }
 
@@ -543,8 +536,11 @@ SpinnakerCamera::set(struct CameraProperties* properties)
     maybe_set_input_trigger_(properties);
     maybe_set_output_trigger_(properties);
 
-    // Setting exposure time may not be compatible with certain triggers (e.g. ExposureActive), so set it last.
-    maybe_set_exposure_time_us_(properties->exposure_time_us);
+    // Setting exposure time may not be compatible with certain triggers
+    // (e.g. ExposureActive), so set it last.
+    if (*(camera_->TriggerSelector) != genicam_exposure_active) {
+        maybe_set_exposure_time_us_(properties->exposure_time_us);
+    }
 }
 
 void
@@ -643,13 +639,13 @@ SpinnakerCamera::maybe_set_sample_type_(SampleType target)
 void
 SpinnakerCamera::maybe_set_exposure_time_us_(float target_us)
 {
+    // Always set the exposure mode because enabling ExposureActive
+    // may automatically switch this to be TriggerWidth.
+    set_enum_node(camera_->ExposureMode, genicam_timed);
+    set_enum_node(camera_->ExposureAuto, genicam_off);
     if (target_us != last_known_settings_.exposure_time_us) {
-        if (*(camera_->TriggerSelector) == genicam_exposure_active) {
-            LOGE("Cannot set exposure time when using ExposureActive trigger.");
-        } else {
-            set_float_node(camera_->ExposureTime, (double)target_us);
-            last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
-        }
+        set_float_node(camera_->ExposureTime, (double)target_us);
+        last_known_settings_.exposure_time_us = (float)camera_->ExposureTime();
     }
 }
 
@@ -693,11 +689,6 @@ SpinnakerCamera::maybe_set_input_trigger_(struct CameraProperties * properties)
         }
         set_enum_node(camera_->TriggerMode,
                       target->enable ? genicam_on : genicam_off);
-    } else {
-        // Some triggers can cause ExposureMode to be changed to TriggerWidth (e.g. ExposureActive).
-        // If no triggers are enabled, ensure we are using a timed exposure, so that ExposureTime
-        // can be forcibly set using Acquire alone.
-        set_enum_node(camera_->ExposureMode, genicam_timed);
     }
 }
 
