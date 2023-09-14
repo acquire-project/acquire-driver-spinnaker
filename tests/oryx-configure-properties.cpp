@@ -80,7 +80,7 @@ main()
         // Binning, shape, and offset are coupled since certain combinations do
         // not define valid regions on the sensor. The following tests cover
         // some important cases, but not everything.
-        
+
         // First set the region to be the whole sensor at native resolution.
         props.video[0].camera.settings.binning = 1;
         props.video[0].camera.settings.offset = { .x = 0, .y = 0 };
@@ -91,7 +91,7 @@ main()
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.offset.y, 0);
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 2448);
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 2048);
-       
+
         // Trying to set the offset should have no effect because the current
         // shape prevents it.
         props.video[0].camera.settings.offset = { .x = 248, .y = 48 };
@@ -124,7 +124,8 @@ main()
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.x, 2448);
         ASSERT_EQ(uint32_t, "%d", props.video[0].camera.settings.shape.y, 2048);
 
-        // Trying to set binning while the shape is too large should also do nothing.
+        // Trying to set binning while the shape is too large should also do
+        // nothing.
         props.video[0].camera.settings.binning = 2;
         OK(acquire_configure(runtime, &props));
         ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.binning, 1);
@@ -162,19 +163,25 @@ main()
                   SampleType_u8);
 
         // Exposure time is tricky because only certain values are supported.
-        // Here we set to the min and max values because those should be supported
-        // and can also be compared with equality.
+        // Here we set to the min and max values because those should be
+        // supported and can also be compared with equality.
         AcquirePropertyMetadata metadata = { 0 };
         OK(acquire_get_configuration_metadata(runtime, &metadata));
 
-        props.video[0].camera.settings.exposure_time_us = metadata.video[0].camera.exposure_time_us.low;
+        props.video[0].camera.settings.exposure_time_us =
+          metadata.video[0].camera.exposure_time_us.low;
         OK(acquire_configure(runtime, &props));
-        ASSERT_EQ(float, "%f",
-        props.video[0].camera.settings.exposure_time_us, metadata.video[0].camera.exposure_time_us.low);
-        props.video[0].camera.settings.exposure_time_us = metadata.video[0].camera.exposure_time_us.high;
+        ASSERT_EQ(float,
+                  "%f",
+                  props.video[0].camera.settings.exposure_time_us,
+                  metadata.video[0].camera.exposure_time_us.low);
+        props.video[0].camera.settings.exposure_time_us =
+          metadata.video[0].camera.exposure_time_us.high;
         OK(acquire_configure(runtime, &props));
-        ASSERT_EQ(float, "%f",
-        props.video[0].camera.settings.exposure_time_us, metadata.video[0].camera.exposure_time_us.high);
+        ASSERT_EQ(float,
+                  "%f",
+                  props.video[0].camera.settings.exposure_time_us,
+                  metadata.video[0].camera.exposure_time_us.high);
 
         OK(acquire_shutdown(runtime));
         LOG("OK");

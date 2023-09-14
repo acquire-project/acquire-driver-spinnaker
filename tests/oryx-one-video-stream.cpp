@@ -67,8 +67,12 @@ main()
                                     SIZED("tiff") - 1,
                                     &props.video[0].storage.identifier));
 
-        storage_properties_init(
-          &props.video[0].storage.settings, 0, SIZED("out.tif"), 0, 0, { .x = 1, .y = 1 });
+        storage_properties_init(&props.video[0].storage.settings,
+                                0,
+                                SIZED("out.tif"),
+                                0,
+                                0,
+                                { .x = 1, .y = 1 });
 
         props.video[0].camera.settings.binning = 1;
         props.video[0].camera.settings.pixel_type = SampleType_u8;

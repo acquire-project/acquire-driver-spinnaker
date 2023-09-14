@@ -75,49 +75,109 @@ main()
                                     &props.video[0].storage.identifier));
 
         // Enable acquisition start input trigger on line 2.
-        props.video[0].camera.settings.input_triggers.acquisition_start.line = 2;
-        props.video[0].camera.settings.input_triggers.acquisition_start.enable = 1;
+        props.video[0].camera.settings.input_triggers.acquisition_start.line =
+          2;
+        props.video[0].camera.settings.input_triggers.acquisition_start.enable =
+          1;
         props.video[0].camera.settings.input_triggers.frame_start.enable = 0;
         props.video[0].camera.settings.input_triggers.exposure.enable = 0;
         OK(acquire_configure(runtime, &props));
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.acquisition_start.line, 2);
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.acquisition_start.enable, 1);
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.frame_start.enable, 0);
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.exposure.enable, 0);
+        ASSERT_EQ(
+          uint8_t,
+          "%d",
+          props.video[0].camera.settings.input_triggers.acquisition_start.line,
+          2);
+        ASSERT_EQ(uint8_t,
+                  "%d",
+                  props.video[0]
+                    .camera.settings.input_triggers.acquisition_start.enable,
+                  1);
+        ASSERT_EQ(
+          uint8_t,
+          "%d",
+          props.video[0].camera.settings.input_triggers.frame_start.enable,
+          0);
+        ASSERT_EQ(uint8_t,
+                  "%d",
+                  props.video[0].camera.settings.input_triggers.exposure.enable,
+                  0);
 
         // Enable acquisition start input trigger as software trigger.
-        props.video[0].camera.settings.input_triggers.acquisition_start.line = 7;
-        props.video[0].camera.settings.input_triggers.acquisition_start.enable = 1;
+        props.video[0].camera.settings.input_triggers.acquisition_start.line =
+          7;
+        props.video[0].camera.settings.input_triggers.acquisition_start.enable =
+          1;
         OK(acquire_configure(runtime, &props));
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.acquisition_start.line, 7);
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.acquisition_start.enable, 1);
+        ASSERT_EQ(
+          uint8_t,
+          "%d",
+          props.video[0].camera.settings.input_triggers.acquisition_start.line,
+          7);
+        ASSERT_EQ(uint8_t,
+                  "%d",
+                  props.video[0]
+                    .camera.settings.input_triggers.acquisition_start.enable,
+                  1);
 
-        // Disable acquisition start and enable frame start input trigger on line 0.
-        props.video[0].camera.settings.input_triggers.acquisition_start.enable = 0;
+        // Disable acquisition start and enable frame start input trigger on
+        // line 0.
+        props.video[0].camera.settings.input_triggers.acquisition_start.enable =
+          0;
         props.video[0].camera.settings.input_triggers.frame_start.line = 0;
         props.video[0].camera.settings.input_triggers.frame_start.enable = 1;
         OK(acquire_configure(runtime, &props));
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.acquisition_start.enable, 0);
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.frame_start.line, 0);
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.frame_start.enable, 1);
+        ASSERT_EQ(uint8_t,
+                  "%d",
+                  props.video[0]
+                    .camera.settings.input_triggers.acquisition_start.enable,
+                  0);
+        ASSERT_EQ(
+          uint8_t,
+          "%d",
+          props.video[0].camera.settings.input_triggers.frame_start.line,
+          0);
+        ASSERT_EQ(
+          uint8_t,
+          "%d",
+          props.video[0].camera.settings.input_triggers.frame_start.enable,
+          1);
 
         // Enable frame start input trigger on as a software trigger.
         props.video[0].camera.settings.input_triggers.frame_start.line = 7;
         props.video[0].camera.settings.input_triggers.frame_start.enable = 1;
         OK(acquire_configure(runtime, &props));
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.frame_start.line, 7);
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.frame_start.enable, 1);
+        ASSERT_EQ(
+          uint8_t,
+          "%d",
+          props.video[0].camera.settings.input_triggers.frame_start.line,
+          7);
+        ASSERT_EQ(
+          uint8_t,
+          "%d",
+          props.video[0].camera.settings.input_triggers.frame_start.enable,
+          1);
 
         // Disable frame start input trigger on line 2.
         props.video[0].camera.settings.input_triggers.frame_start.enable = 0;
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.input_triggers.frame_start.enable, 0);
+        ASSERT_EQ(
+          uint8_t,
+          "%d",
+          props.video[0].camera.settings.input_triggers.frame_start.enable,
+          0);
 
         // Enable exposure output trigger on line 1.
         props.video[0].camera.settings.output_triggers.exposure.line = 1;
         props.video[0].camera.settings.output_triggers.exposure.enable = 1;
         OK(acquire_configure(runtime, &props));
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.output_triggers.exposure.line, 1);
-        ASSERT_EQ(uint8_t, "%d", props.video[0].camera.settings.output_triggers.exposure.enable, 1);
+        ASSERT_EQ(uint8_t,
+                  "%d",
+                  props.video[0].camera.settings.output_triggers.exposure.line,
+                  1);
+        ASSERT_EQ(
+          uint8_t,
+          "%d",
+          props.video[0].camera.settings.output_triggers.exposure.enable,
+          1);
 
         OK(acquire_shutdown(runtime));
 

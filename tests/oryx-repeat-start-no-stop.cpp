@@ -60,14 +60,16 @@ main()
         AcquireProperties properties = {};
         {
             OK(acquire_get_configuration(runtime, &properties));
-            DEVOK(device_manager_select(dm,
-                                        DeviceKind_Camera,
-                                        SIZED(".*ORX-10GS-51S5M.*") - 1,
-                                        &properties.video[0].camera.identifier));
-            DEVOK(device_manager_select(dm,
-                                        DeviceKind_Storage,
-                                        SIZED("Trash") - 1,
-                                        &properties.video[0].storage.identifier));
+            DEVOK(
+              device_manager_select(dm,
+                                    DeviceKind_Camera,
+                                    SIZED(".*ORX-10GS-51S5M.*") - 1,
+                                    &properties.video[0].camera.identifier));
+            DEVOK(
+              device_manager_select(dm,
+                                    DeviceKind_Storage,
+                                    SIZED("Trash") - 1,
+                                    &properties.video[0].storage.identifier));
 
             properties.video[0].max_frame_count = 1000;
 
