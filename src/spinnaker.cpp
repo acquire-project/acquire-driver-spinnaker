@@ -327,7 +327,7 @@ struct SpinnakerCamera final : private Camera
     void query_roi_offset_capabilities_(CameraPropertyMetadata* meta) const;
     void query_roi_shape_capabilities_(CameraPropertyMetadata* meta) const;
     void query_pixel_type_capabilities_(CameraPropertyMetadata* meta) const;
-    void query_triggering_capabilities_(CameraPropertyMetadata* meta);
+    void query_triggering_capabilities_(CameraPropertyMetadata* meta) const;
 
     void maybe_set_roi_(uint8_t binning,
                         CameraProperties::camera_properties_offset_s offset,
@@ -827,7 +827,7 @@ SpinnakerCamera::query_pixel_type_capabilities_(
 }
 
 void
-SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
+SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta) const
 {
     // Acquire can represent at most 8 lines.
     // The first supported blackfly camera only has two (line 0 and software).
