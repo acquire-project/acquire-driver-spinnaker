@@ -56,13 +56,13 @@ main()
         OK(acquire_get_configuration(runtime, &properties));
 
         DEVOK(device_manager_select(dm,
-                                  DeviceKind_Camera,
-                                  SIZED(".*BFLY.*") - 1,
-                                  &properties.video[0].camera.identifier));
+                                    DeviceKind_Camera,
+                                    SIZED(".*BFLY.*") - 1,
+                                    &properties.video[0].camera.identifier));
         DEVOK(device_manager_select(dm,
-                                  DeviceKind_Storage,
-                                  SIZED("Trash") - 1,
-                                  &properties.video[0].storage.identifier));
+                                    DeviceKind_Storage,
+                                    SIZED("Trash") - 1,
+                                    &properties.video[0].storage.identifier));
 
         properties.video[0].max_frame_count = 10;
         OK(acquire_configure(runtime, &properties));

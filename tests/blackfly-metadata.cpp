@@ -86,11 +86,15 @@ main()
 
         AcquirePropertyMetadata metadata = { 0 };
         OK(acquire_get_configuration_metadata(runtime, &metadata));
-        const CameraPropertyMetadata & meta = metadata.video[0].camera;
-        
-        // Expected values determined by inspecting blackfly metadata in spinview.
+        const CameraPropertyMetadata& meta = metadata.video[0].camera;
+
+        // Expected values determined by inspecting blackfly metadata in
+        // spinview.
         ASSERT_EQ(uint8_t, "%d", meta.exposure_time_us.writable, 1);
-        ASSERT_EQ(int, "%d", meta.exposure_time_us.type, PropertyType_FloatingPrecision);
+        ASSERT_EQ(int,
+                  "%d",
+                  meta.exposure_time_us.type,
+                  PropertyType_FloatingPrecision);
 
         ASSERT_EQ(uint8_t, "%d", meta.line_interval_us.writable, 0);
         ASSERT_EQ(uint8_t, "%d", meta.readout_direction.writable, 0);
@@ -99,7 +103,7 @@ main()
         ASSERT_EQ(float, "%g", meta.binning.low, 1);
         ASSERT_EQ(float, "%g", meta.binning.high, 4);
         ASSERT_EQ(int, "%d", meta.binning.type, PropertyType_FixedPrecision);
-        
+
         ASSERT_EQ(uint8_t, "%d", meta.shape.x.writable, 1);
         ASSERT_EQ(float, "%g", meta.shape.x.low, 4);
         ASSERT_EQ(float, "%g", meta.shape.x.high, 1920);
@@ -109,7 +113,7 @@ main()
         ASSERT_EQ(float, "%g", meta.shape.y.low, 2);
         ASSERT_EQ(float, "%g", meta.shape.y.high, 1200);
         ASSERT_EQ(int, "%d", meta.shape.y.type, PropertyType_FixedPrecision);
-         
+
         ASSERT_EQ(uint8_t, "%d", meta.offset.x.writable, 1);
         ASSERT_EQ(float, "%g", meta.offset.x.low, 0);
         ASSERT_EQ(float, "%g", meta.offset.x.high, 0);
@@ -119,14 +123,18 @@ main()
         ASSERT_EQ(float, "%g", meta.offset.y.low, 0);
         ASSERT_EQ(float, "%g", meta.offset.y.high, 0);
         ASSERT_EQ(int, "%d", meta.offset.y.type, PropertyType_FixedPrecision);
- 
-        ASSERT_EQ(unsigned int, "0x%x", (unsigned int)meta.supported_pixel_types, (1U << SampleType_u8) | (1U << SampleType_u16));
- 
+
+        ASSERT_EQ(unsigned int,
+                  "0x%x",
+                  (unsigned int)meta.supported_pixel_types,
+                  (1U << SampleType_u8) | (1U << SampleType_u16));
+
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.acquisition_start.input, 0);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.acquisition_start.output, 0);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.input, 0b1000'0001);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b0000'0010);
-        ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.input, 0b1000'0001);
+        ASSERT_EQ(
+          uint8_t, "0x%x", meta.triggers.frame_start.input, 0b1000'0001);
         ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.output, 0);
 
         OK(acquire_shutdown(runtime));
