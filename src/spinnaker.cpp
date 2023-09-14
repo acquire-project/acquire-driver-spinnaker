@@ -324,6 +324,16 @@ update_output_triggers(Spinnaker::CameraPtr & camera, struct CameraProperties* p
     }
 }
 
+void
+maybe_set_output_trigger(Spinnaker::CameraPtr & camera, const Trigger & trigger, const Spinnaker::GenICam::gcstring & name)
+{
+    if (trigger.enable && is_enum_name(camera->LineSource, name)) {
+        set_enum_node(camera->LineSelector, to_trigger_source(trigger.line));
+        set_enum_node(camera->LineMode, genicam_output);
+        set_enum_node(camera->LineSource, name);
+    }
+}
+
 //
 // Camera declaration
 //
@@ -367,7 +377,7 @@ struct SpinnakerCamera final : private Camera
     void maybe_set_sample_type_(SampleType target);
     void maybe_set_exposure_time_us_(float target_us);
     void maybe_set_input_trigger_(struct CameraProperties * properties);
-    void maybe_set_output_trigger_(struct CameraProperties * properties);
+    void maybe_set_output_triggers_(struct CameraProperties * properties);
 };
 
 //
@@ -540,7 +550,7 @@ SpinnakerCamera::set(struct CameraProperties* properties)
     maybe_set_roi_(properties->binning, properties->offset, properties->shape);
     maybe_set_sample_type_(properties->pixel_type);
     maybe_set_input_trigger_(properties);
-    maybe_set_output_trigger_(properties);
+    maybe_set_output_triggers_(properties);
 
     // Setting exposure time may not be compatible with certain triggers
     // (e.g. ExposureActive), so set it last.
@@ -693,21 +703,14 @@ SpinnakerCamera::maybe_set_input_trigger_(struct CameraProperties * properties)
     }
 }
 
+
 void
-SpinnakerCamera::maybe_set_output_trigger_(struct CameraProperties * properties)
+SpinnakerCamera::maybe_set_output_triggers_(struct CameraProperties * properties)
 {
-    auto & output_triggers = properties->output_triggers;
-    if (Trigger * target = find_first_enabled_trigger(output_triggers)) {
-        set_enum_node(camera_->LineSelector, to_trigger_source(target->line));
-        set_enum_node(camera_->LineMode, genicam_output);
-        if ((target == &output_triggers.exposure) && is_enum_name(camera_->LineSource, genicam_exposure_active)) {
-            set_enum_node(camera_->LineSource, genicam_exposure_active);
-        } else if ((target == &output_triggers.frame_start) && is_enum_name(camera_->LineSource, genicam_frame_start)) {
-            set_enum_node(camera_->LineSource, genicam_frame_start);
-        } else if ((target == &output_triggers.trigger_wait) && is_enum_name(camera_->LineSource, genicam_trigger_wait)) {
-            set_enum_node(camera_->LineSource, genicam_trigger_wait);
-        }
-    }
+    auto & triggers = properties->output_triggers;
+    maybe_set_output_trigger(camera_, triggers.exposure, genicam_exposure_active);
+    maybe_set_output_trigger(camera_, triggers.frame_start, genicam_frame_start);
+    maybe_set_output_trigger(camera_, triggers.trigger_wait, genicam_trigger_wait);
 }
 
 void
