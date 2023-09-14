@@ -202,6 +202,12 @@ set_float_node(Spinnaker::GenApi::IFloat& node, double value)
     }
 }
 
+// Returns true if the given name is a valid entry for the given enum node, false otherwise.
+bool
+is_enum_name(Spinnaker::GenApi::IEnumeration & node, const Spinnaker::GenICam::gcstring & name) {
+    return IsReadable(node.GetEntryByName(name));
+}
+
 // Returns a representative Spinnaker binning node.
 // Spinnaker supports independent horizontal and vertical binning, but
 // Acquire only supports one binning value.
@@ -668,18 +674,12 @@ SpinnakerCamera::maybe_set_input_trigger_(struct CameraProperties * properties)
     // Finally, use the first trigger enabled in acquire, if any.
     auto & input_triggers = properties->input_triggers;
     if (Trigger * target = find_first_enabled_trigger(input_triggers)) {
-        if (target == &input_triggers.acquisition_start) {
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
-                set_enum_node(camera_->TriggerSelector, genicam_acquisition_start);
-            }
-        } else if (target == &input_triggers.frame_start) {
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_frame_start))) {
-                set_enum_node(camera_->TriggerSelector, genicam_frame_start);
-            }
-        } else if (target == &input_triggers.exposure) {
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
-                set_enum_node(camera_->TriggerSelector, genicam_exposure_active);
-            }
+        if ((target == &input_triggers.acquisition_start) && is_enum_name(camera_->TriggerSelector, genicam_acquisition_start)) {
+            set_enum_node(camera_->TriggerSelector, genicam_acquisition_start);
+        } else if ((target == &input_triggers.frame_start) && is_enum_name(camera_->TriggerSelector, genicam_frame_start)) {
+            set_enum_node(camera_->TriggerSelector, genicam_frame_start);
+        } else if ((target == &input_triggers.exposure) && is_enum_name(camera_->TriggerSelector, genicam_exposure_active)) {
+            set_enum_node(camera_->TriggerSelector, genicam_exposure_active);
         }
 
         set_enum_node(camera_->TriggerSource, to_trigger_source(target->line));
@@ -700,18 +700,12 @@ SpinnakerCamera::maybe_set_output_trigger_(struct CameraProperties * properties)
     if (Trigger * target = find_first_enabled_trigger(output_triggers)) {
         set_enum_node(camera_->LineSelector, to_trigger_source(target->line));
         set_enum_node(camera_->LineMode, genicam_output);
-        if (target == &output_triggers.exposure) {
-            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_exposure_active))) {
-                set_enum_node(camera_->LineSource, genicam_exposure_active);
-            }
-        } else if (target == &output_triggers.frame_start) {
-            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_frame_start))) {
-                set_enum_node(camera_->LineSource, genicam_frame_start);
-            }
-        } else if (target == &output_triggers.trigger_wait) {
-            if (IsReadable(camera_->LineSource.GetEntryByName(genicam_trigger_wait))) {
-                set_enum_node(camera_->LineSource, genicam_trigger_wait);
-            }
+        if ((target == &output_triggers.exposure) && is_enum_name(camera_->LineSource, genicam_exposure_active)) {
+            set_enum_node(camera_->LineSource, genicam_exposure_active);
+        } else if ((target == &output_triggers.frame_start) && is_enum_name(camera_->LineSource, genicam_frame_start)) {
+            set_enum_node(camera_->LineSource, genicam_frame_start);
+        } else if ((target == &output_triggers.trigger_wait) && is_enum_name(camera_->LineSource, genicam_trigger_wait)) {
+            set_enum_node(camera_->LineSource, genicam_trigger_wait);
         }
     }
 }
@@ -860,14 +854,14 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 
     for (int i=0; i < meta->digital_lines.line_count; ++i) {
         const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
-        if (IsReadable(camera_->TriggerSource.GetEntryByName(name))) {
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_acquisition_start))) {
+        if (is_enum_name(camera_->TriggerSource, name)) {
+            if (is_enum_name(camera_->TriggerSelector, genicam_acquisition_start)) {
                 meta->triggers.acquisition_start.input |= (1ULL << i);
             }
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_frame_start))) {
+            if (is_enum_name(camera_->TriggerSelector, genicam_frame_start)) {
                 meta->triggers.frame_start.input |= (1ULL << i);
             }
-            if (IsReadable(camera_->TriggerSelector.GetEntryByName(genicam_exposure_active))) {
+            if (is_enum_name(camera_->TriggerSelector, genicam_exposure_active)) {
                 meta->triggers.exposure.input |= (1ULL << i);
             }
         }
@@ -876,16 +870,16 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
     const Spinnaker::GenICam::gcstring original_line = *(camera_->LineSelector);
     for (int i=0; i < meta->digital_lines.line_count; ++i) {
         const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
-        if (IsReadable(camera_->LineSelector.GetEntryByName(name))) {
+        if (is_enum_name(camera_->LineSelector, name)) {
             camera_->LineSelector = name;
-            if (IsReadable(camera_->LineMode.GetEntryByName(genicam_output))) {
-                if (IsReadable(camera_->LineSource.GetEntryByName(genicam_acquisition_start))) {
+            if (is_enum_name(camera_->LineMode, genicam_output)) {
+                if (is_enum_name(camera_->LineSource, genicam_acquisition_start)) {
                     meta->triggers.acquisition_start.output |= (1ULL << i);
                 }
-                if (IsReadable(camera_->LineSource.GetEntryByName(genicam_frame_start))) {
+                if (is_enum_name(camera_->LineSource, genicam_frame_start)) {
                     meta->triggers.frame_start.output |= (1ULL << i);
                 }
-                if (IsReadable(camera_->LineSource.GetEntryByName(genicam_exposure_active))) {
+                if (is_enum_name(camera_->LineSource, genicam_exposure_active)) {
                     meta->triggers.exposure.output |= (1ULL << i);
                 }
                 // TODO: what about trigger_wait?
