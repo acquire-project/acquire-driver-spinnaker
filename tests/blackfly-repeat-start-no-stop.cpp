@@ -62,7 +62,7 @@ main()
             OK(acquire_get_configuration(runtime, &properties));
             DEVOK(device_manager_select(dm,
                                       DeviceKind_Camera,
-                                      SIZED(".*BFLY.*") - 1,
+                                      SIZED(".*BFLY-U3-23S6M.*") - 1,
                                       &properties.video[0].camera.identifier));
             DEVOK(device_manager_select(dm,
                                       DeviceKind_Storage,
