@@ -703,7 +703,6 @@ SpinnakerCamera::maybe_set_input_trigger_(struct CameraProperties * properties)
     }
 }
 
-
 void
 SpinnakerCamera::maybe_set_output_triggers_(struct CameraProperties * properties)
 {
