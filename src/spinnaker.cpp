@@ -146,9 +146,9 @@ to_trigger_source(uint8_t line)
 
 // Returns true if two triggers are equal in value, false otherwise.
 bool
-is_equal(const Trigger& lhs, const Trigger& rhs)
+is_equal(const Trigger * lhs, const Trigger * rhs)
 {
-    return memcmp(&lhs, &rhs, sizeof(Trigger)) == 0;
+    return lhs && rhs && memcmp(lhs, rhs, sizeof(Trigger)) == 0;
 }
 
 // Returns true if a Spinnaker node is writable, false otherwise.
@@ -231,7 +231,9 @@ check_spinnaker_camera_id(uint64_t id)
     EXPECT(id < limit, "Expected an unsigned int device index. Got: %llu", id);
 }
 
-/// @return first enabled trigger or null if no triggers are enabled
+// Some utilities for updating input and output triggers/lines in place
+// based on the current state of the camera.
+
 template<typename T>
 Trigger *
 find_first_enabled_trigger(T & triggers) {
@@ -302,8 +304,7 @@ update_output_triggers(Spinnaker::CameraPtr & camera, struct CameraProperties* p
     for (auto& line : lines) {
         camera->LineSelector = line;
         
-        // Some lines do not have a readable LineMode (e.g. Oryx Line 6), so treat
-        // these as non-output lines.
+        // Some lines do not have a readable LineMode (e.g. Oryx Line 6), so skip them.
         if (!IsReadable(camera->LineMode) || *(camera->LineMode) != genicam_output) {
             continue;
         }
@@ -321,6 +322,22 @@ update_output_triggers(Spinnaker::CameraPtr & camera, struct CameraProperties* p
                    source == genicam_trigger_wait) {
             update_output_trigger(camera, triggers.trigger_wait);
         }
+    }
+}
+
+void
+maybe_set_input_trigger(Spinnaker::CameraPtr & camera, const Trigger * trigger, const Spinnaker::GenICam::gcstring & name)
+{
+    if (is_enum_name(camera->TriggerSelector, name)) {
+        set_enum_node(camera->TriggerSelector, name);
+        set_enum_node(camera->TriggerSource, to_trigger_source(trigger->line));
+        // TriggerActivation can be non-writable when using the Software trigger for
+        // some cameras (e.g. Oryx).
+        if (IsWritable(camera->TriggerActivation)) {
+            set_enum_node(camera->TriggerActivation, to_trigger_activation(trigger->edge));
+        }
+        set_enum_node(camera->TriggerMode,
+                      trigger->enable ? genicam_on : genicam_off);
     }
 }
 
@@ -669,6 +686,13 @@ SpinnakerCamera::maybe_set_exposure_time_us_(float target_us)
 void
 SpinnakerCamera::maybe_set_input_trigger_(struct CameraProperties * properties)
 {
+    auto & input_triggers = properties->input_triggers;
+    Trigger * trigger = find_first_enabled_trigger(input_triggers);
+    Trigger * last_known_trigger = find_first_enabled_trigger(last_known_settings_.input_triggers);
+    if (is_equal(trigger, last_known_trigger)) {
+        return;
+    }
+
     // First turn triggering off before any other configuration as in
     // Spinnaker's Trigger.cpp example.
     set_enum_node(camera_->TriggerMode, genicam_off);
@@ -682,24 +706,14 @@ SpinnakerCamera::maybe_set_input_trigger_(struct CameraProperties * properties)
     }
     
     // Finally, use the first trigger enabled in acquire, if any.
-    auto & input_triggers = properties->input_triggers;
-    if (Trigger * target = find_first_enabled_trigger(input_triggers)) {
-        if ((target == &input_triggers.acquisition_start) && is_enum_name(camera_->TriggerSelector, genicam_acquisition_start)) {
-            set_enum_node(camera_->TriggerSelector, genicam_acquisition_start);
-        } else if ((target == &input_triggers.frame_start) && is_enum_name(camera_->TriggerSelector, genicam_frame_start)) {
-            set_enum_node(camera_->TriggerSelector, genicam_frame_start);
-        } else if ((target == &input_triggers.exposure) && is_enum_name(camera_->TriggerSelector, genicam_exposure_active)) {
-            set_enum_node(camera_->TriggerSelector, genicam_exposure_active);
-        }
-
-        set_enum_node(camera_->TriggerSource, to_trigger_source(target->line));
-        // TriggerActivation can be non-writable when using the Software trigger for
-        // some cameras (e.g. Oryx).
-        if (IsWritable(camera_->TriggerActivation)) {
-            set_enum_node(camera_->TriggerActivation, to_trigger_activation(target->edge));
-        }
-        set_enum_node(camera_->TriggerMode,
-                      target->enable ? genicam_on : genicam_off);
+    if ((trigger == &input_triggers.acquisition_start)) {
+        maybe_set_input_trigger(camera_, trigger, genicam_acquisition_start);
+    } else if ((trigger == &input_triggers.frame_start)) {
+        maybe_set_input_trigger(camera_, trigger, genicam_frame_start);
+    } else if ((trigger == &input_triggers.exposure)) {
+        maybe_set_input_trigger(camera_, trigger, genicam_exposure_active);
+    } else if (trigger != nullptr) {
+        LOGE("Found an unrecognized trigger.");
     }
 }
 
@@ -856,6 +870,8 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
 
     for (int i=0; i < meta->digital_lines.line_count; ++i) {
         const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
+        // The available sources should not be dependent on the currently
+        // selected trigger, so no need to change TriggerSelector.
         if (is_enum_name(camera_->TriggerSource, name)) {
             if (is_enum_name(camera_->TriggerSelector, genicam_acquisition_start)) {
                 meta->triggers.acquisition_start.input |= (1ULL << i);
@@ -872,6 +888,8 @@ SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta)
     const Spinnaker::GenICam::gcstring original_line = *(camera_->LineSelector);
     for (int i=0; i < meta->digital_lines.line_count; ++i) {
         const Spinnaker::GenICam::gcstring name(meta->digital_lines.names[i]);
+        // Each line can have different modes and therefore different sources,
+        // we iterate over the currently selected line.
         if (is_enum_name(camera_->LineSelector, name)) {
             camera_->LineSelector = name;
             if (is_enum_name(camera_->LineMode, genicam_output)) {
