@@ -14,6 +14,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
 add_subdirectory(src)
+add_subdirectory(utils)
 add_subdirectory(tests)
 
 include(CPack)
