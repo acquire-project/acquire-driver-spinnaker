@@ -827,7 +827,8 @@ SpinnakerCamera::query_pixel_type_capabilities_(
 }
 
 void
-SpinnakerCamera::query_triggering_capabilities_(CameraPropertyMetadata* meta) const
+SpinnakerCamera::query_triggering_capabilities_(
+  CameraPropertyMetadata* meta) const
 {
     // Acquire can represent at most 8 lines.
     // The first supported blackfly camera only has two (line 0 and software).
