@@ -6,7 +6,7 @@
 Spinnaker::CameraPtr
 find_camera_with_model_name(const Spinnaker::SystemPtr system, const char * model_name) {
     Spinnaker::CameraList cameras = system->GetCameras();
-    for (int i=0; i < cameras.GetSize(); ++i) {
+    for (unsigned int i=0; i < cameras.GetSize(); ++i) {
         Spinnaker::CameraPtr camera = cameras[i];
         Spinnaker::GenApi::INodeMap& node_map = camera->GetTLDeviceNodeMap();
         const Spinnaker::GenApi::CStringPtr node = node_map.GetNode("DeviceModelName");
@@ -35,9 +35,10 @@ main(int argc, char** argv)
 
     if (camera.IsValid()) {
         std::cout << "Found camera model " << model_name << std::endl;
-        Spinnaker::GenApi::INodeMap & node_map = camera->GetTLStreamNodeMap();
-        const Spinnaker::GenApi::CIntegerPtr node = node_map.GetNode("GevSCPSPacketSize");
-        node->SetValue(packet_size_bytes);
+        camera->Init();
+        camera->GevSCPSPacketSize = packet_size_bytes;
+        std::cout << "Set packet size to " << camera->GevSCPSPacketSize() << std::endl;
+        camera->DeInit();
     } else {
         std::cerr << "Failed to find camera model " << model_name << ". Is it connected?" << std::endl;
         result = -1;
