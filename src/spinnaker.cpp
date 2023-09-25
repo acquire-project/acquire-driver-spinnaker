@@ -303,7 +303,7 @@ struct SpinnakerCamera final : private Camera
 
     void set(struct CameraProperties* properties);
     void get(struct CameraProperties* properties);
-    void get_meta(struct CameraPropertyMetadata* meta);
+    void get_meta(struct CameraPropertyMetadata* meta) const;
     void get_shape(struct ImageShape* shape) const;
     void start();
     void stop();
@@ -734,7 +734,7 @@ SpinnakerCamera::get(struct CameraProperties* properties)
 }
 
 void
-SpinnakerCamera::get_meta(struct CameraPropertyMetadata* meta)
+SpinnakerCamera::get_meta(struct CameraPropertyMetadata* meta) const
 {
     const std::scoped_lock lock(lock_);
     query_exposure_time_capabilities_(meta);
