@@ -643,11 +643,11 @@ SpinnakerCamera::maybe_set_input_trigger_(struct CameraProperties* properties)
     // Finally, use the first trigger enabled in acquire, if any.
     auto& input_triggers = properties->input_triggers;
     Trigger* trigger = find_first_enabled_trigger(input_triggers);
-    if ((trigger == &input_triggers.acquisition_start)) {
+    if (trigger == &input_triggers.acquisition_start) {
         set_input_trigger(camera_, trigger, genicam_acquisition_start);
-    } else if ((trigger == &input_triggers.frame_start)) {
+    } else if (trigger == &input_triggers.frame_start) {
         set_input_trigger(camera_, trigger, genicam_frame_start);
-    } else if ((trigger == &input_triggers.exposure)) {
+    } else if (trigger == &input_triggers.exposure) {
         set_input_trigger(camera_, trigger, genicam_exposure_active);
     } else if (trigger != nullptr) {
         LOGE("Found an unrecognized trigger.");
