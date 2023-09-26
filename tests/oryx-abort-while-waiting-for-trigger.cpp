@@ -1,10 +1,8 @@
 #include "acquire.h"
 #include "device/hal/device.manager.h"
-#include "platform.h"
+#include "device/props/components.h"
 #include "logger.h"
-
-#include <cstdio>
-#include <exception>
+#include "platform.h"
 #include <stdexcept>
 
 /// Helper for passing size static strings as function args.
@@ -28,59 +26,60 @@
 #define DEVOK(e) CHECK(Device_Ok == (e))
 #define OK(e) CHECK(AcquireStatus_Ok == (e))
 
-static void
+void
 reporter(int is_error,
          const char* file,
          int line,
          const char* function,
          const char* msg)
 {
-    printf("%s%s(%d) - %s: %s\n",
-           is_error ? "ERROR " : "",
-           file,
-           line,
-           function,
-           msg);
+    auto stream = is_error ? stderr : stdout;
+    fprintf(stream,
+            "%s%s(%d) - %s: %s\n",
+            is_error ? "ERROR " : "",
+            file,
+            line,
+            function,
+            msg);
+    fflush(stream);
 }
 
 int
 main()
 {
-    AcquireRuntime* runtime = 0;
+    auto runtime = acquire_init(reporter);
     try {
-        CHECK(runtime = acquire_init(reporter));
-        const DeviceManager* dm;
-        CHECK(dm = acquire_device_manager(runtime));
-
-        AcquireProperties properties = {};
-        OK(acquire_get_configuration(runtime, &properties));
+        CHECK(runtime);
+        auto dm = acquire_device_manager(runtime);
+        AcquireProperties props = {};
+        OK(acquire_get_configuration(runtime, &props));
 
         DEVOK(device_manager_select(dm,
-                                  DeviceKind_Camera,
-                                  SIZED(".*BFLY.*") - 1,
-                                  &properties.video[0].camera.identifier));
+                                    DeviceKind_Camera,
+                                    SIZED(".*ORX-10GS-51S5M.*") - 1,
+                                    &props.video[0].camera.identifier));
         DEVOK(device_manager_select(dm,
-                                  DeviceKind_Storage,
-                                  SIZED("Trash") - 1,
-                                  &properties.video[0].storage.identifier));
+                                    DeviceKind_Storage,
+                                    SIZED("trash") - 1,
+                                    &props.video[0].storage.identifier));
 
-        properties.video[0].max_frame_count = 10;
-        OK(acquire_configure(runtime, &properties));
+        // Acquire's line 7 is defined to be the software trigger.
+        props.video[0].camera.settings.input_triggers.frame_start.line = 7;
+        props.video[0].camera.settings.input_triggers.frame_start.enable = 1;
+        props.video[0].max_frame_count = 10;
+        OK(acquire_configure(runtime, &props));
 
-        for (auto i = 0; i < 10; ++i) {
-            struct clock clock = {};
-            clock_init(&clock);
-            OK(acquire_start(runtime));
-            OK(acquire_stop(runtime));
-            LOG("Start/Stop cycle took %f ms", clock_toc_ms(&clock));
-        }
+        OK(acquire_start(runtime));
+        clock_sleep_ms(0, 500);
+        OK(acquire_abort(runtime));
+
         OK(acquire_shutdown(runtime));
         LOG("OK");
         return 0;
-    } catch (const std::exception& e) {
-        ERR("Exception: %s", e.what());
+    } catch (const std::runtime_error& e) {
+        ERR("Runtime error: %s", e.what());
     } catch (...) {
-        ERR("Exception: (unknown)");
+        ERR("Uncaught exception");
     }
     acquire_shutdown(runtime);
     return 1;

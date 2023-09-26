@@ -12,16 +12,35 @@ else()
         set(project acquire-driver-spinnaker) # CMAKE_PROJECT_NAME gets overridden if this is a subtree of another project
 
         #
+        # Define setup fixtures
+        #
+        set(tgt set-packet-size)
+        add_executable(${tgt} set-packet-size.cpp)
+        target_link_libraries(${tgt} spinnaker)
+        # Ensure that the packet size of the Oryx camera is set to 1000 bytes
+        # before any of its tests run.
+        add_test(NAME test-${tgt} COMMAND ${tgt} ORX-10GS-51S5M 1000)
+        set_tests_properties(test-${tgt} PROPERTIES FIXTURES_SETUP setup-oryx)
+
+        #
         # Tests
         #
         set(tests
                 list-devices
-                one-video-stream
-                repeat-start
-                repeat-start-no-stop
-                configure-properties
-                configure-triggering
-                abort-while-waiting-for-trigger
+                blackfly-metadata
+                blackfly-one-video-stream
+                blackfly-repeat-start
+                blackfly-repeat-start-no-stop
+                blackfly-configure-properties
+                blackfly-configure-triggering
+                blackfly-abort-while-waiting-for-trigger
+                oryx-metadata
+                oryx-one-video-stream
+                oryx-repeat-start
+                oryx-repeat-start-no-stop
+                oryx-configure-properties
+                oryx-configure-triggering
+                oryx-abort-while-waiting-for-trigger
         )
 
         foreach(name ${tests})
@@ -40,6 +59,9 @@ else()
 
                 add_test(NAME test-${tgt} COMMAND ${tgt})
                 set_tests_properties(test-${tgt} PROPERTIES LABELS acquire-driver-spinnaker)
+                if(name MATCHES "^oryx")
+                        set_tests_properties(test-${tgt} PROPERTIES FIXTURES_REQUIRED setup-oryx)
+                endif()
         endforeach()
 
         #

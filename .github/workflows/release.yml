@@ -16,6 +16,7 @@ jobs:
       - self-hosted
       - spinnaker
       - BFLY-U3-23S6M-C # for tests
+      - ORX-10GS-51S5M-C # for tests
       - windows
 
     permissions:

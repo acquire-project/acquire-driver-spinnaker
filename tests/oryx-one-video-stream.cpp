@@ -1,8 +1,9 @@
 #include "acquire.h"
 #include "device/hal/device.manager.h"
-#include "device/props/components.h"
-#include "logger.h"
 #include "platform.h"
+#include "logger.h"
+
+#include <cstdio>
 #include <stdexcept>
 
 /// Helper for passing size static strings as function args.
@@ -48,33 +49,87 @@ int
 main()
 {
     auto runtime = acquire_init(reporter);
+
     try {
         CHECK(runtime);
         auto dm = acquire_device_manager(runtime);
+        CHECK(dm);
+
         AcquireProperties props = {};
         OK(acquire_get_configuration(runtime, &props));
 
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Camera,
-                                    SIZED(".*BFLY.*") - 1,
+                                    SIZED(".*ORX-10GS-51S5M.*") - 1,
                                     &props.video[0].camera.identifier));
         DEVOK(device_manager_select(dm,
                                     DeviceKind_Storage,
-                                    SIZED("trash") - 1,
+                                    SIZED("tiff") - 1,
                                     &props.video[0].storage.identifier));
 
-        // Acquire's line 2 is defined to be the software trigger.
-        props.video[0].camera.settings.input_triggers.frame_start.line = 2;
-        props.video[0].camera.settings.input_triggers.frame_start.enable = 1;
-        props.video[0].camera.settings.input_triggers.frame_start.edge =
-          TriggerEdge_Rising;
+        storage_properties_init(&props.video[0].storage.settings,
+                                0,
+                                SIZED("out.tif"),
+                                0,
+                                0,
+                                { .x = 1, .y = 1 });
+
+        props.video[0].camera.settings.binning = 1;
+        props.video[0].camera.settings.pixel_type = SampleType_u8;
+        props.video[0].camera.settings.shape = { .x = 2448, .y = 2048 };
+        props.video[0].camera.settings.exposure_time_us = 1e4;
         props.video[0].max_frame_count = 10;
+
         OK(acquire_configure(runtime, &props));
 
-        OK(acquire_start(runtime));
-        clock_sleep_ms(0, 500);
-        OK(acquire_abort(runtime));
+        const auto next = [](VideoFrame* cur) -> VideoFrame* {
+            return (VideoFrame*)(((uint8_t*)cur) + cur->bytes_of_frame);
+        };
 
+        const auto consumed_bytes = [](const VideoFrame* const cur,
+                                       const VideoFrame* const end) -> size_t {
+            return (uint8_t*)end - (uint8_t*)cur;
+        };
+
+        struct clock clock;
+        static double time_limit_ms = 20000.0;
+        clock_init(&clock);
+        clock_shift_ms(&clock, time_limit_ms);
+        OK(acquire_start(runtime));
+        uint64_t nframes = 0;
+        while (nframes < props.video[0].max_frame_count) {
+            struct clock throttle;
+            clock_init(&throttle);
+            EXPECT(clock_cmp_now(&clock) < 0,
+                   "Timeout at %f ms",
+                   clock_toc_ms(&clock) + time_limit_ms);
+            VideoFrame *beg, *end, *cur;
+            OK(acquire_map_read(runtime, 0, &beg, &end));
+            for (cur = beg; cur < end; cur = next(cur)) {
+                LOG("stream %d counting frame w id %d", 0, cur->frame_id);
+                CHECK(cur->shape.dims.width ==
+                      props.video[0].camera.settings.shape.x);
+                CHECK(cur->shape.dims.height ==
+                      props.video[0].camera.settings.shape.y);
+                ++nframes;
+            }
+            {
+                size_t n = consumed_bytes(beg, end);
+                OK(acquire_unmap_read(runtime, 0, n));
+                if (n)
+                    LOG("stream %d consumed bytes %d", 0, n);
+            }
+            clock_sleep_ms(&throttle, 100.0f);
+
+            LOG("stream %d nframes %d. remaining time %f s",
+                0,
+                nframes,
+                -1e-3 * clock_toc_ms(&clock));
+        }
+
+        CHECK(nframes == props.video[0].max_frame_count);
+
+        OK(acquire_stop(runtime));
         OK(acquire_shutdown(runtime));
         LOG("OK");
         return 0;
