@@ -889,7 +889,6 @@ SpinnakerCamera::query_triggering_capabilities_(
                                  genicam_exposure_active)) {
                     meta->triggers.exposure.output |= (1ULL << i);
                 }
-                // TODO: what about trigger_wait?
             }
         }
     }
