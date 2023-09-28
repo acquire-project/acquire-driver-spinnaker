@@ -38,10 +38,9 @@ We welcome contributors. The following will help you get started building the co
 
 Requires
 
-- CMake 3.13+ ([download page](https://cmake.org/download/) or via
-  [chocolatey](https://community.chocolatey.org/packages/cmake)).
-- A C++20 compiler (Microsoft Visual Studio Community [download
-  page](https://visualstudio.microsoft.com/downloads/), or clang).
+- CMake 3.13+ from its [download page](https://cmake.org/download/), or via
+  [chocolatey](https://community.chocolatey.org/packages/cmake) or [homebrew](https://formulae.brew.sh/formula/cmake).
+- A C++20 compiler such as [Microsoft Visual Studio](https://visualstudio.microsoft.com/downloads/) or [Clang](https://clang.llvm.org/).
 
 
 ### Configure
