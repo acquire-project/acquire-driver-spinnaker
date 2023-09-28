@@ -1134,6 +1134,12 @@ SpinnakerDriver::SpinnakerDriver()
   },
   system_(Spinnaker::System::GetInstance())
 {
+    Spinnaker::LibraryVersion version = system_->GetLibraryVersion();
+    LOG("Spinnaker version %d.%d.%d.%d",
+        version.major,
+        version.minor,
+        version.type,
+        version.build);
 }
 
 SpinnakerDriver::~SpinnakerDriver()
