@@ -66,7 +66,6 @@ jobs:
 
       - name: Build
         run: |
-          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release -DNOTEST=1
           cmake --build ${{github.workspace}}/build --config Release
           cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C Release -G ZIP
 
