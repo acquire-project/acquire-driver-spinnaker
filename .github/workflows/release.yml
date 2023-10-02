@@ -61,7 +61,10 @@ jobs:
           ctest -C Release -L anyplatform --output-on-failure
           ctest -C Release -L acquire-driver-spinnaker --output-on-failure
 
-      - name: Package
+      - name: CMake
+        run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release -DNOTEST=1
+
+      - name: Build
         run: |
           cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release -DNOTEST=1
           cmake --build ${{github.workspace}}/build --config Release
@@ -72,9 +75,80 @@ jobs:
           name: Windows Release binaries
           path: ${{github.workspace}}/*.zip
 
+  linux-build:
+    name: "Build on Ubuntu"
+    runs-on:
+      - ubuntu-latest
+
+    permissions:
+      actions: write
+
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.10.0
+        with:
+          access_token: ${{ github.token }}
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: CMake
+        run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release -DNOTEST=1
+
+      - name: Build
+        run: |
+          cmake --build ${{github.workspace}}/build --config Release
+          cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C Release -G ZIP
+
+      - name: Test  # don't release unless tests pass
+        working-directory: ${{github.workspace}}/build
+        run: ctest -C Release -L anyplatform --output-on-failure
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ubuntu-latest Release binaries
+          path: ${{github.workspace}}/*.zip
+
+  mac-build:
+    name: "Build on Mac"
+    runs-on: macos-latest
+
+    permissions:
+      actions: write
+
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.10.0
+        with:
+          access_token: ${{ github.token }}
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: CMake
+        run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release -DNOTEST=1 -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build
+        run: |
+          cmake --build ${{github.workspace}}/build --config Release
+          cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C Release -G ZIP
+
+      - name: Test  # don't release unless tests pass
+        working-directory: ${{github.workspace}}/build
+        run: ctest -C Release -L anyplatform --output-on-failure
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: macos-latest Release binaries
+          path: ${{github.workspace}}/*.zip
+
   release:
     needs:
       - windows-build
+      - linux-build
+      - mac-build
     name: "Release"
     runs-on: "ubuntu-latest"
 
