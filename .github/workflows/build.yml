@@ -48,8 +48,8 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build ${{github.workspace}}/pack --config Release
-          cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
+          cmake --build ${{github.workspace}}/build--config Release
+          cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C Release -G ZIP
 
       - uses: actions/upload-artifact@v3
         with:
@@ -80,8 +80,8 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build ${{github.workspace}}/pack --config Release
-          cpack --config ${{github.workspace}}/pack/CPackConfig.cmake -C Release -G ZIP
+          cmake --build ${{github.workspace}}/build --config Release
+          cpack --config ${{github.workspace}}/build/CPackConfig.cmake -C Release -G ZIP
 
       - uses: actions/upload-artifact@v3
         with:
