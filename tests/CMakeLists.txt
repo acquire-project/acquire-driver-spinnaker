@@ -58,9 +58,13 @@ else()
                 )
 
                 add_test(NAME test-${tgt} COMMAND ${tgt})
-                set_tests_properties(test-${tgt} PROPERTIES LABELS acquire-driver-spinnaker)
                 if(name MATCHES "^oryx")
                         set_tests_properties(test-${tgt} PROPERTIES FIXTURES_REQUIRED setup-oryx)
+                        set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-spinnaker;oryx")
+                elseif(name MATCHES "^blackfly")
+                        set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-spinnaker;blackfly")
+                else() # list-devices
+                        set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-spinnaker;blackfly;oryx")
                 endif()
         endforeach()
 
