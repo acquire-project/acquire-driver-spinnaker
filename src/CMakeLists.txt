@@ -1,5 +1,5 @@
 if (NOT TARGET acquire-core-logger)
-    add_subdirectory(acquire-core-libs)
+    add_subdirectory(../acquire-common/acquire-core-libs ${CMAKE_CURRENT_BINARY_DIR}/acquire-core-libs)
 endif ()
 
 set(tgt acquire-driver-spinnaker)
