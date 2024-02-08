@@ -936,7 +936,9 @@ SpinnakerCamera::stop()
     // Disable the current trigger to prevent an effective deadlock between
     // EndAcquisition and GetNextFrame that is awaiting a trigger.
     if (IsWritable(camera_->TriggerMode)) {
+        auto mode = camera_->TriggerMode.ToString();
         camera_->TriggerMode = genicam_off;
+        camera_->TriggerMode = mode;
     }
     // Could possibly use camera_->IsStreaming instead, but the Spinnaker
     // docs are not clear enough about what that means. It's critical
