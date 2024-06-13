@@ -4,6 +4,7 @@ find_path(spinnaker_include_dir "Spinnaker.h"
     PATH_SUFFIXES
         "include/spinnaker"  # osx
         "FLIR Systems/Spinnaker/include"  # windows
+        "spinnaker/include" # linux
     DOC "Directory that contains Spinnaker.h"
     NO_CACHE)
 
@@ -27,6 +28,10 @@ if(spinnaker_include_dir)
     elseif(APPLE)
         set_target_properties(${tgt} PROPERTIES
             IMPORTED_LOCATION "${spinnaker_include_dir}../../lib/libSpinnaker.dylib"
+        )
+    elseif(LINUX)
+        set_target_properties(${tgt} PROPERTIES
+            IMPORTED_LOCATION "${spinnaker_include_dir}../lib/libSpinnaker.so"
         )
     endif()
 else()
